@@ -8,8 +8,14 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# 日本語フォント設定（必要に応じて）
-plt.rcParams['font.family'] = 'DejaVu Sans'
+# 日本語フォント設定
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['axes.unicode_minus'] = False
+
+# フォントをクリアしてからjapanize_matplotlibをインポート
+import matplotlib.font_manager
+matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+import japanize_matplotlib
 
 # 代替データソース用の関数
 def get_japanese_stock_data(symbol, start_date, end_date):

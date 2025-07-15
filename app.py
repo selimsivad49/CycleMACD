@@ -13,6 +13,15 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# 日本語フォントの設定
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['axes.unicode_minus'] = False
+
+# フォントをクリアしてからjapanize_matplotlibをインポート
+import matplotlib.font_manager
+matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+import japanize_matplotlib
+
 # Import our MACD backtester
 from cyclemacd import MACDBacktester, analyze_multiple_stocks
 
