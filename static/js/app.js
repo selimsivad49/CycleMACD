@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
             row.className = 'error-row';
             row.innerHTML = `
                 <td><strong>${result.symbol}</strong></td>
-                <td colspan="7" class="text-danger">
+                <td colspan="11" class="text-danger">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     ${result.error}
                 </td>
@@ -107,7 +107,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const data = result.data;
+        const tradeStats = result.trade_statistics;
         row.className = 'success-row fade-in';
+        
+        // Long/Short統計の取得
+        const longStats = tradeStats.by_direction?.LONG || {};
+        const shortStats = tradeStats.by_direction?.SHORT || {};
         
         row.innerHTML = `
             <td><strong>${result.symbol}</strong></td>
@@ -117,6 +122,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <td>${formatPercentage(data.win_rate)}</td>
             <td class="negative">${formatPercentage(data.max_drawdown)}</td>
             <td>${data.sharpe_ratio.toFixed(2)}</td>
+            <td>${longStats.win_rate ? longStats.win_rate.toFixed(1) + '%' : 'N/A'}</td>
+            <td>${shortStats.win_rate ? shortStats.win_rate.toFixed(1) + '%' : 'N/A'}</td>
+            <td>${longStats.pl_ratio ? longStats.pl_ratio.toFixed(2) : 'N/A'}</td>
+            <td>${shortStats.pl_ratio ? shortStats.pl_ratio.toFixed(2) : 'N/A'}</td>
             <td>
                 <button class="chart-button" onclick="showChart('${result.symbol}')" title="チャート表示">
                     <i class="fas fa-chart-line"></i>
@@ -153,6 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chartLoading.classList.remove('d-none');
         chartImage.style.display = 'none';
         chartError.classList.add('d-none');
+        document.getElementById('tradeStatistics').style.display = 'none';
         
         chartModal.show();
 
@@ -164,6 +174,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.chart) {
                     chartImage.src = 'data:image/png;base64,' + data.chart;
                     chartImage.style.display = 'block';
+                    
+                    // 取引統計を表示
+                    if (data.trade_statistics) {
+                        displayTradeStatistics(data.trade_statistics);
+                        document.getElementById('tradeStatistics').style.display = 'block';
+                    }
                 } else {
                     chartError.textContent = data.error || 'チャート生成に失敗しました';
                     chartError.classList.remove('d-none');
@@ -176,6 +192,52 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Chart error:', error);
             });
     };
+
+    function displayTradeStatistics(tradeStats) {
+        const overallStats = document.getElementById('overallStats');
+        const longStats = document.getElementById('longStats');
+        const shortStats = document.getElementById('shortStats');
+
+        // 全体統計
+        if (tradeStats.overall) {
+            const overall = tradeStats.overall;
+            overallStats.innerHTML = `
+                <small class="text-muted">総取引数:</small> <strong>${overall.total_trades}</strong><br>
+                <small class="text-muted">勝率:</small> <strong>${overall.win_rate.toFixed(1)}%</strong><br>
+                <small class="text-muted">P/L比:</small> <strong>${overall.pl_ratio.toFixed(2)}</strong><br>
+                <small class="text-muted">総損益:</small> <strong>${overall.total_pnl.toFixed(2)}</strong><br>
+                <small class="text-muted">平均保有:</small> <strong>${overall.avg_holding_days.toFixed(1)}日</strong>
+            `;
+        }
+
+        // Long統計
+        if (tradeStats.by_direction && tradeStats.by_direction.LONG) {
+            const long = tradeStats.by_direction.LONG;
+            longStats.innerHTML = `
+                <small class="text-muted">取引数:</small> <strong>${long.trade_count}</strong><br>
+                <small class="text-muted">勝率:</small> <strong>${long.win_rate.toFixed(1)}%</strong><br>
+                <small class="text-muted">P/L比:</small> <strong>${long.pl_ratio.toFixed(2)}</strong><br>
+                <small class="text-muted">総損益:</small> <strong>${long.total_profit.toFixed(2)}</strong><br>
+                <small class="text-muted">最大DD:</small> <strong>${long.max_drawdown.toFixed(2)}</strong>
+            `;
+        } else {
+            longStats.innerHTML = '<small class="text-muted">LONG取引なし</small>';
+        }
+
+        // Short統計
+        if (tradeStats.by_direction && tradeStats.by_direction.SHORT) {
+            const short = tradeStats.by_direction.SHORT;
+            shortStats.innerHTML = `
+                <small class="text-muted">取引数:</small> <strong>${short.trade_count}</strong><br>
+                <small class="text-muted">勝率:</small> <strong>${short.win_rate.toFixed(1)}%</strong><br>
+                <small class="text-muted">P/L比:</small> <strong>${short.pl_ratio.toFixed(2)}</strong><br>
+                <small class="text-muted">総損益:</small> <strong>${short.total_profit.toFixed(2)}</strong><br>
+                <small class="text-muted">最大DD:</small> <strong>${short.max_drawdown.toFixed(2)}</strong>
+            `;
+        } else {
+            shortStats.innerHTML = '<small class="text-muted">SHORT取引なし</small>';
+        }
+    }
 
     // 銘柄選択ユーティリティ関数をグローバルスコープに
     window.selectAllSymbols = function() {

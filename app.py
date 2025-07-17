@@ -18,14 +18,17 @@ plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['axes.unicode_minus'] = False
 
 # フォントをクリアしてからjapanize_matplotlibをインポート
-import matplotlib.font_manager
-matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+# import matplotlib.font_manager
+# matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 import japanize_matplotlib
 
 # Import our MACD backtester
 from cyclemacd import MACDBacktester, analyze_multiple_stocks
 
 app = Flask(__name__)
+
+font = {"family":"IPAexGothic"}
+matplotlib.rc('font', **font)
 
 # Default Japanese stock symbols
 DEFAULT_SYMBOLS = [
@@ -65,9 +68,11 @@ def analyze():
             data_result = backtester.backtest()
             
             if data_result is not None:
+                trade_stats = backtester.get_trade_statistics()
                 results.append({
                     'symbol': symbol,
                     'data': backtester.results,
+                    'trade_statistics': trade_stats,
                     'success': True
                 })
             else:
@@ -146,11 +151,18 @@ def generate_chart(symbol):
         plt.savefig(img, format='png', dpi=150, bbox_inches='tight')
         img.seek(0)
         plot_url = base64.b64encode(img.getvalue()).decode()
+         # Save plot as file for debug
+        filename = f"macd_analysis.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
         plt.close()
+        
+        # 取引統計を取得
+        trade_stats = backtester.get_trade_statistics()
         
         return jsonify({
             'chart': plot_url,
-            'results': backtester.results
+            'results': backtester.results,
+            'trade_statistics': trade_stats
         })
         
     except Exception as e:

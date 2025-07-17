@@ -114,6 +114,10 @@
                                         <th>勝率</th>
                                         <th>最大DD</th>
                                         <th>シャープ比</th>
+                                        <th>Long勝率</th>
+                                        <th>Short勝率</th>
+                                        <th>L P/L比</th>
+                                        <th>S P/L比</th>
                                         <th>チャート</th>
                                     </tr>
                                 </thead>
@@ -143,6 +147,40 @@
                         </div>
                         <img id="chartImage" class="img-fluid" style="display: none;">
                         <div id="chartError" class="alert alert-danger d-none"></div>
+                        
+                        <!-- 取引統計表示 -->
+                        <div id="tradeStatistics" class="mt-4" style="display: none;">
+                            <h6>取引統計</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="card border-info">
+                                        <div class="card-header bg-info text-white">
+                                            <h6 class="mb-0">全体統計</h6>
+                                        </div>
+                                        <div class="card-body" id="overallStats">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card border-success">
+                                        <div class="card-header bg-success text-white">
+                                            <h6 class="mb-0">LONG統計</h6>
+                                        </div>
+                                        <div class="card-body" id="longStats">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card border-danger">
+                                        <div class="card-header bg-danger text-white">
+                                            <h6 class="mb-0">SHORT統計</h6>
+                                        </div>
+                                        <div class="card-body" id="shortStats">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

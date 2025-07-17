@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for headless environment
 import matplotlib.pyplot as plt
+import japanize_matplotlib
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
@@ -16,6 +17,9 @@ plt.rcParams['axes.unicode_minus'] = False
 import matplotlib.font_manager
 matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 import japanize_matplotlib
+
+font = {"family":"IPAexGothic"}
+matplotlib.rc('font', **font)
 
 # 代替データソース用の関数
 def get_japanese_stock_data(symbol, start_date, end_date):
@@ -51,6 +55,7 @@ class MACDBacktester:
         self.end_date = end_date
         self.data = None
         self.results = None
+        self.trades = []  # 取引履歴を保存するリスト
         
     def fetch_data(self):
         """株価データを取得"""
@@ -96,27 +101,94 @@ class MACDBacktester:
         self.data['Signal_Buy'] = 0
         self.data['Signal_Sell'] = 0
         
-        for i in range(1, len(self.data)):
-            # 前回が0以下で今回が0超の場合：買いシグナル
-            if (self.data['Histogram'].iloc[i-1] <= 0 and 
-                self.data['Histogram'].iloc[i] > 0):
+        current_position = 0
+        entry_date = None
+        entry_price = None
+        
+        for i in range(2, len(self.data)):
+            current_date = self.data.index[i]
+            current_price = self.data['Close'].iloc[i]
+            
+            # 2か月前が0以下で前月が0超の場合：買いシグナル
+            if (self.data['Histogram'].iloc[i-2] <= 0 and 
+                self.data['Histogram'].iloc[i-1] > 0):
+                
+                # 前のポジションをクローズ
+                if current_position == -1:
+                    # ショートポジションを決済
+                    pnl = entry_price - current_price
+                    self.trades.append({
+                        'entry_date': entry_date,
+                        'exit_date': current_date,
+                        'entry_price': entry_price,
+                        'exit_price': current_price,
+                        'direction': 'SHORT',
+                        'pnl': pnl,
+                        'return_pct': pnl / entry_price * 100
+                    })
+                
+                # 新しいロングポジションを開く
                 self.data.loc[self.data.index[i], 'Signal_Buy'] = 1
                 self.data.loc[self.data.index[i], 'Position'] = 1
+                current_position = 1
+                entry_date = current_date
+                entry_price = current_price
             
-            # 前回が0超で今回が0以下の場合：売りシグナル
-            elif (self.data['Histogram'].iloc[i-1] > 0 and 
-                  self.data['Histogram'].iloc[i] <= 0):
+            # 2か月前が0超で前月が0以下の場合：売りシグナル
+            elif (self.data['Histogram'].iloc[i-2] > 0 and 
+                  self.data['Histogram'].iloc[i-1] <= 0):
+                
+                # 前のポジションをクローズ
+                if current_position == 1:
+                    # ロングポジションを決済
+                    pnl = current_price - entry_price
+                    self.trades.append({
+                        'entry_date': entry_date,
+                        'exit_date': current_date,
+                        'entry_price': entry_price,
+                        'exit_price': current_price,
+                        'direction': 'LONG',
+                        'pnl': pnl,
+                        'return_pct': pnl / entry_price * 100
+                    })
+                
+                # 新しいショートポジションを開く
                 self.data.loc[self.data.index[i], 'Signal_Sell'] = 1
                 self.data.loc[self.data.index[i], 'Position'] = -1
+                current_position = -1
+                entry_date = current_date
+                entry_price = current_price
             
             # ポジション継続
             else:
                 if i > 0:
                     prev_pos = self.data['Position'].iloc[i-1]
-                    if prev_pos == 1 and self.data['Histogram'].iloc[i] > 0:
+                    if prev_pos == 1 and self.data['Histogram'].iloc[i-1] > 0:
                         self.data.loc[self.data.index[i], 'Position'] = 1
-                    elif prev_pos == -1 and self.data['Histogram'].iloc[i] <= 0:
+                    elif prev_pos == -1 and self.data['Histogram'].iloc[i-1] <= 0:
                         self.data.loc[self.data.index[i], 'Position'] = -1
+        
+        # 最後のポジションが残っている場合、最終日で決済
+        if current_position != 0:
+            final_date = self.data.index[-1]
+            final_price = self.data['Close'].iloc[-1]
+            
+            if current_position == 1:
+                pnl = final_price - entry_price
+                direction = 'LONG'
+            else:
+                pnl = entry_price - final_price
+                direction = 'SHORT'
+            
+            self.trades.append({
+                'entry_date': entry_date,
+                'exit_date': final_date,
+                'entry_price': entry_price,
+                'exit_price': final_price,
+                'direction': direction,
+                'pnl': pnl,
+                'return_pct': pnl / entry_price * 100
+            })
         
         return self.data
     
@@ -183,6 +255,172 @@ class MACDBacktester:
         }
         
         return self.results
+    
+    def get_trade_history(self):
+        """取引履歴を取得"""
+        if not self.trades:
+            return pd.DataFrame()
+        
+        df_trades = pd.DataFrame(self.trades)
+        df_trades['holding_days'] = (df_trades['exit_date'] - df_trades['entry_date']).dt.days
+        
+        return df_trades
+    
+    def get_trade_statistics(self):
+        """取引統計をJSONフォーマットで取得"""
+        if not self.trades:
+            return {}
+        
+        df_trades = self.get_trade_history()
+        
+        # 全体統計
+        profitable_trades = df_trades[df_trades['pnl'] > 0]
+        losing_trades = df_trades[df_trades['pnl'] < 0]
+        win_rate = len(profitable_trades) / len(df_trades) * 100
+        avg_profit = profitable_trades['pnl'].mean() if len(profitable_trades) > 0 else 0
+        avg_loss = losing_trades['pnl'].mean() if len(losing_trades) > 0 else 0
+        pl_ratio = abs(avg_profit / avg_loss) if avg_loss != 0 else 0
+        
+        overall_stats = {
+            'total_trades': len(df_trades),
+            'win_rate': win_rate,
+            'winning_trades': len(profitable_trades),
+            'losing_trades': len(losing_trades),
+            'avg_profit': avg_profit,
+            'avg_loss': avg_loss,
+            'pl_ratio': pl_ratio,
+            'max_profit': df_trades['pnl'].max(),
+            'max_loss': df_trades['pnl'].min(),
+            'avg_holding_days': df_trades['holding_days'].mean(),
+            'total_pnl': df_trades['pnl'].sum()
+        }
+        
+        # Long/Short別統計
+        long_trades = df_trades[df_trades['direction'] == 'LONG']
+        short_trades = df_trades[df_trades['direction'] == 'SHORT']
+        
+        direction_stats = {}
+        
+        for direction, trades_df in [('LONG', long_trades), ('SHORT', short_trades)]:
+            if len(trades_df) > 0:
+                profitable = trades_df[trades_df['pnl'] > 0]
+                losing = trades_df[trades_df['pnl'] < 0]
+                win_rate_dir = len(profitable) / len(trades_df) * 100
+                avg_profit_dir = profitable['pnl'].mean() if len(profitable) > 0 else 0
+                avg_loss_dir = losing['pnl'].mean() if len(losing) > 0 else 0
+                pl_ratio_dir = abs(avg_profit_dir / avg_loss_dir) if avg_loss_dir != 0 else 0
+                total_profit_dir = trades_df['pnl'].sum()
+                
+                # 方向別最大ドローダウン計算
+                trades_sorted = trades_df.sort_values('exit_date')
+                cumulative_pnl = trades_sorted['pnl'].cumsum()
+                running_max = cumulative_pnl.expanding().max()
+                drawdown = cumulative_pnl - running_max
+                max_dd_dir = drawdown.min()
+                
+                direction_stats[direction] = {
+                    'trade_count': len(trades_df),
+                    'win_rate': win_rate_dir,
+                    'winning_trades': len(profitable),
+                    'losing_trades': len(losing),
+                    'total_profit': total_profit_dir,
+                    'avg_profit': avg_profit_dir,
+                    'avg_loss': avg_loss_dir,
+                    'pl_ratio': pl_ratio_dir,
+                    'max_drawdown': max_dd_dir,
+                    'max_profit': trades_df['pnl'].max(),
+                    'max_loss': trades_df['pnl'].min(),
+                    'avg_holding_days': trades_df['holding_days'].mean()
+                }
+            else:
+                direction_stats[direction] = {
+                    'trade_count': 0,
+                    'win_rate': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'total_profit': 0,
+                    'avg_profit': 0,
+                    'avg_loss': 0,
+                    'pl_ratio': 0,
+                    'max_drawdown': 0,
+                    'max_profit': 0,
+                    'max_loss': 0,
+                    'avg_holding_days': 0
+                }
+        
+        return {
+            'overall': overall_stats,
+            'by_direction': direction_stats
+        }
+    
+    def print_trade_history(self):
+        """取引履歴を表示"""
+        if not self.trades:
+            print("取引履歴がありません")
+            return
+        
+        df_trades = self.get_trade_history()
+        
+        print(f"\n=== {self.symbol} 取引履歴 ===")
+        print(f"総取引数: {len(df_trades)}")
+        
+        for i, trade in df_trades.iterrows():
+            print(f"\n取引 {i+1}:")
+            print(f"  方向: {trade['direction']}")
+            print(f"  エントリー: {trade['entry_date'].strftime('%Y-%m-%d')} @ {trade['entry_price']:.2f}")
+            print(f"  イグジット: {trade['exit_date'].strftime('%Y-%m-%d')} @ {trade['exit_price']:.2f}")
+            print(f"  保有日数: {trade['holding_days']}日")
+            print(f"  損益: {trade['pnl']:.2f} ({trade['return_pct']:.2f}%)")
+        
+        # 統計情報
+        profitable_trades = df_trades[df_trades['pnl'] > 0]
+        losing_trades = df_trades[df_trades['pnl'] < 0]
+        win_rate = len(profitable_trades) / len(df_trades) * 100
+        avg_profit = profitable_trades['pnl'].mean() if len(profitable_trades) > 0 else 0
+        avg_loss = losing_trades['pnl'].mean() if len(losing_trades) > 0 else 0
+        pl_ratio = abs(avg_profit / avg_loss) if avg_loss != 0 else 0
+        
+        print(f"\n=== 取引統計（全体） ===")
+        print(f"勝率: {win_rate:.1f}% ({len(profitable_trades)}/{len(df_trades)})")
+        print(f"平均利益: {avg_profit:.2f}")
+        print(f"平均損失: {avg_loss:.2f}")
+        print(f"P/L比: {pl_ratio:.2f}")
+        print(f"平均保有日数: {df_trades['holding_days'].mean():.1f}日")
+        print(f"最大利益: {df_trades['pnl'].max():.2f}")
+        print(f"最大損失: {df_trades['pnl'].min():.2f}")
+        
+        # Long/Short別統計
+        long_trades = df_trades[df_trades['direction'] == 'LONG']
+        short_trades = df_trades[df_trades['direction'] == 'SHORT']
+        
+        for direction, trades_df in [('LONG', long_trades), ('SHORT', short_trades)]:
+            if len(trades_df) > 0:
+                profitable = trades_df[trades_df['pnl'] > 0]
+                losing = trades_df[trades_df['pnl'] < 0]
+                win_rate_dir = len(profitable) / len(trades_df) * 100
+                avg_profit_dir = profitable['pnl'].mean() if len(profitable) > 0 else 0
+                avg_loss_dir = losing['pnl'].mean() if len(losing) > 0 else 0
+                pl_ratio_dir = abs(avg_profit_dir / avg_loss_dir) if avg_loss_dir != 0 else 0
+                total_profit_dir = trades_df['pnl'].sum()
+                
+                # 方向別最大ドローダウン計算
+                trades_sorted = trades_df.sort_values('exit_date')
+                cumulative_pnl = trades_sorted['pnl'].cumsum()
+                running_max = cumulative_pnl.expanding().max()
+                drawdown = cumulative_pnl - running_max
+                max_dd_dir = drawdown.min()
+                
+                print(f"\n=== {direction}取引統計 ===")
+                print(f"取引数: {len(trades_df)}")
+                print(f"勝率: {win_rate_dir:.1f}% ({len(profitable)}/{len(trades_df)})")
+                print(f"総利益: {total_profit_dir:.2f}")
+                print(f"平均利益: {avg_profit_dir:.2f}")
+                print(f"平均損失: {avg_loss_dir:.2f}")
+                print(f"P/L比: {pl_ratio_dir:.2f}")
+                print(f"最大ドローダウン: {max_dd_dir:.2f}")
+                print(f"最大利益: {trades_df['pnl'].max():.2f}")
+                print(f"最大損失: {trades_df['pnl'].min():.2f}")
+                print(f"平均保有日数: {trades_df['holding_days'].mean():.1f}日")
     
     def plot_results(self, save_file=True):
         """結果をプロット"""
@@ -283,7 +521,7 @@ def analyze_multiple_stocks(symbols, start_date, end_date):
 # 使用例
 if __name__ == "__main__":
     # 分析期間設定
-    start_date = "2020-01-01"
+    start_date = "2000-01-01"
     end_date = "2024-12-31"
     
     # 分析対象銘柄（例：日本の代表的な銘柄）
@@ -297,16 +535,17 @@ if __name__ == "__main__":
         "6098",  # リクルートホールディングス
         "4063",  # 信越化学工業
         "9983",  # ファーストリテイリング
-        "7974"   # 任天堂
+        "7974"  # 任天堂
     ]
     
     # 複数銘柄の分析実行
-    results_df = analyze_multiple_stocks(symbols, start_date, end_date)
+    # results_df = analyze_multiple_stocks(symbols, start_date, end_date)
     
     # 個別銘柄の詳細分析例
-    print("\n=== 個別分析例（トヨタ自動車） ===")
-    toyota_backtester = MACDBacktester("7203", start_date, end_date)
-    toyota_data = toyota_backtester.backtest()
+    print("\n=== 個別分析例 ===")
+    backtester = MACDBacktester("4519", start_date, end_date)
+    data = backtester.backtest()
     
-    if toyota_data is not None:
-        toyota_backtester.plot_results()
+    if data is not None:
+        backtester.plot_results()
+        backtester.print_trade_history()
