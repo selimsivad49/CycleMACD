@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import japanize_matplotlib
 from datetime import datetime, timedelta
 import warnings
+import sqlite3
+import os
 warnings.filterwarnings('ignore')
 
 # 日本語フォント設定
@@ -21,38 +23,256 @@ import japanize_matplotlib
 font = {"family":"IPAexGothic"}
 matplotlib.rc('font', **font)
 
+# データベース設定
+DB_NAME = "yf_history.db"
+
+class StockDataManager:
+    def __init__(self, db_path=DB_NAME):
+        self.db_path = db_path
+        self.init_database()
+    
+    def init_database(self):
+        """データベースを初期化"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # メタデータテーブル作成
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS symbols_meta (
+                symbol TEXT PRIMARY KEY,
+                table_name TEXT,
+                first_date TEXT,
+                last_date TEXT,
+                last_updated TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def create_symbol_table(self, symbol):
+        """銘柄用のテーブルを作成"""
+        table_name = self._sanitize_table_name(symbol)
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                date TEXT PRIMARY KEY,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL,
+                volume INTEGER,
+                dividends REAL,
+                stock_splits REAL
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        
+        return table_name
+    
+    def _sanitize_table_name(self, symbol):
+        """シンボル名をテーブル名として使えるようにサニタイズ"""
+        import re
+        # 英数字とアンダースコア以外を除去し、stockプレフィックスを追加
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', symbol)
+        # 連続するアンダースコアを1つにまとめる
+        sanitized = re.sub(r'_+', '_', sanitized)
+        # 先頭・末尾のアンダースコアを除去
+        sanitized = sanitized.strip('_')
+        return f"stock_{sanitized}"
+    
+    def get_table_name(self, symbol):
+        """銘柄のテーブル名を取得"""
+        return self._sanitize_table_name(symbol)
+    
+    def get_data_range(self, symbol):
+        """データベースに保存されているデータの範囲を取得"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT first_date, last_date FROM symbols_meta WHERE symbol = ?', (symbol,))
+        result = cursor.fetchone()
+        
+        conn.close()
+        
+        if result:
+            return result[0], result[1]
+        return None, None
+    
+    def save_data(self, symbol, data):
+        """データをデータベースに保存"""
+        if data.empty:
+            return
+        
+        table_name = self.create_symbol_table(symbol)
+        
+        conn = sqlite3.connect(self.db_path)
+        
+        # データを準備
+        data_to_save = data.copy()
+        data_to_save.index = data_to_save.index.strftime('%Y-%m-%d')
+        data_to_save = data_to_save.reset_index()
+        data_to_save.columns = ['date', 'open', 'high', 'low', 'close', 'volume', 'dividends', 'stock_splits']
+        
+        # 既存データを削除してから挿入（重複回避）
+        cursor = conn.cursor()
+        for _, row in data_to_save.iterrows():
+            cursor.execute(f'DELETE FROM {table_name} WHERE date = ?', (row['date'],))
+        
+        # データ挿入
+        data_to_save.to_sql(table_name, conn, if_exists='append', index=False)
+        
+        # メタデータ更新
+        first_date = data_to_save['date'].min()
+        last_date = data_to_save['date'].max()
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO symbols_meta (symbol, table_name, first_date, last_date, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (symbol, table_name, first_date, last_date, current_time))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"  {symbol}: データベースに保存 ({first_date} - {last_date})")
+    
+    def load_data(self, symbol, start_date, end_date):
+        """データベースからデータを読み込み"""
+        table_name = self.get_table_name(symbol)
+        
+        conn = sqlite3.connect(self.db_path)
+        
+        try:
+            query = f'''
+                SELECT * FROM {table_name}
+                WHERE date >= ? AND date <= ?
+                ORDER BY date
+            '''
+            
+            data = pd.read_sql_query(query, conn, params=(start_date, end_date))
+            
+            if not data.empty:
+                data['date'] = pd.to_datetime(data['date'])
+                data.set_index('date', inplace=True)
+                data.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+                print(f"  {symbol}: データベースから読み込み ({len(data)}件)")
+                return data
+            
+        except Exception as e:
+            print(f"  {symbol}: データベース読み込みエラー - {e}")
+        finally:
+            conn.close()
+        
+        return pd.DataFrame()
+    
+    def needs_update(self, symbol, required_start, required_end):
+        """データの更新が必要かチェック"""
+        first_date, last_date = self.get_data_range(symbol)
+        
+        if first_date is None or last_date is None:
+            return True, required_start, required_end
+        
+        # 必要な範囲がデータベースの範囲内かチェック
+        required_start_dt = datetime.strptime(required_start, '%Y-%m-%d')
+        required_end_dt = datetime.strptime(required_end, '%Y-%m-%d')
+        first_date_dt = datetime.strptime(first_date, '%Y-%m-%d')
+        last_date_dt = datetime.strptime(last_date, '%Y-%m-%d')
+        
+        # 昨日までの最新データを取得（今日は取引中の可能性があるため）
+        yesterday = datetime.now() - timedelta(days=1)
+        yesterday_str = yesterday.strftime('%Y-%m-%d')
+        
+        # 更新が必要な範囲を計算
+        fetch_start = required_start
+        fetch_end = yesterday_str
+        
+        # 必要な開始日がDBの開始日より前の場合
+        if required_start_dt < first_date_dt:
+            fetch_start = required_start
+        # DBに必要な開始日以降のデータがある場合
+        elif required_start_dt >= first_date_dt:
+            fetch_start = None
+        
+        # 必要な終了日がDBの終了日より後の場合、または昨日より古い場合
+        if required_end_dt > last_date_dt or last_date_dt < yesterday:
+            if fetch_start is None:
+                # 既存データの次の日から取得
+                next_day = last_date_dt + timedelta(days=1)
+                fetch_start = next_day.strftime('%Y-%m-%d')
+            fetch_end = yesterday_str
+        else:
+            if fetch_start is None:
+                return False, None, None
+        
+        return True, fetch_start, fetch_end
+
+# データベースマネージャーのインスタンス作成
+db_manager = StockDataManager()
+
 # 代替データソース用の関数
 def get_japanese_stock_data(symbol, start_date, end_date):
-    """日本株データを取得する代替関数"""
+    """日本株データを取得する関数（データベース優先）"""
+    print(f"  {symbol}のデータを取得中...")
+    
+    # 1990-01-01から昨日までの完全なデータを確保
+    full_start = "1990-01-01"
+    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+    
     try:
-        # まずyfinanceを試す
-        ticker_formats = [f"{symbol}.T", f"{symbol}.TO"]
+        # データベースの更新が必要かチェック
+        needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, full_start, yesterday)
         
-        for ticker_format in ticker_formats:
-            try:
-                stock = yf.Ticker(ticker_format)
-                data = stock.history(start=start_date, end=end_date, interval='1mo')
-                
-                if not data.empty and len(data) > 26:
-                    print(f"  {ticker_format}で成功！")
-                    return data
+        # 新しいデータが必要な場合、yfinanceから取得
+        if needs_update and fetch_start and fetch_end:
+            print(f"  {symbol}: yfinanceから取得中 ({fetch_start} - {fetch_end})")
+            
+            # 日本株のティッカー形式を試す
+            ticker_formats = [symbol]
+            
+            new_data = None
+            for ticker_format in ticker_formats:
+                try:
+                    stock = yf.Ticker(ticker_format)
+                    new_data = stock.history(start=fetch_start, end=fetch_end, interval='1d')
                     
-            except Exception as e:
-                continue
+                    if not new_data.empty:
+                        print(f"  {ticker_format}で成功！({len(new_data)}件)")
+                        break
+                        
+                except Exception as e:
+                    continue
+            
+            if new_data is not None and not new_data.empty:
+                # データベースに保存
+                db_manager.save_data(symbol, new_data)
+            else:
+                print(f"  {symbol}: yfinanceからのデータ取得に失敗")
         
-        # yfinanceで失敗した場合の代替手段
-        print(f"  {symbol}: yfinanceで取得できませんでした")
-        return None
+        # データベースから要求された期間のデータを読み込み
+        data = db_manager.load_data(symbol, start_date, end_date)
         
+        if not data.empty:
+            return data
+        else:
+            print(f"  {symbol}: 要求された期間のデータが見つかりません")
+            return None
+            
     except Exception as e:
-        print(f"  データ取得エラー: {e}")
+        print(f"  {symbol}: データ取得エラー - {e}")
         return None
 
 class MACDBacktester:
-    def __init__(self, symbol, start_date, end_date):
+    def __init__(self, symbol, start_date, end_date, timeframe='M'):
         self.symbol = symbol
         self.start_date = start_date
         self.end_date = end_date
+        self.timeframe = timeframe  # 'D':日足, 'W':週足, 'M':月足
         self.data = None
         self.results = None
         self.trades = []  # 取引履歴を保存するリスト
@@ -74,23 +294,79 @@ class MACDBacktester:
             print(f"  データ取得エラー: {e}")
             return False
     
+    def resample_data(self):
+        """日足データを指定された時間軸にリサンプリング"""
+        if self.data is None or self.data.empty:
+            return
+        
+        if self.timeframe == 'D':
+            # 日足の場合はそのまま
+            print(f"  {self.symbol}: 日足データをそのまま使用 ({len(self.data)}件)")
+            return self.data
+        elif self.timeframe == 'W':
+            # 週足データにリサンプリング（週末ベース）
+            resampled_data = self.data.resample('W').agg({
+                'Open': 'first',
+                'High': 'max',
+                'Low': 'min',
+                'Close': 'last',
+                'Volume': 'sum'
+            }).dropna()
+            timeframe_name = "週足"
+        elif self.timeframe == 'M':
+            # 月足データにリサンプリング（月末ベース）
+            resampled_data = self.data.resample('M').agg({
+                'Open': 'first',
+                'High': 'max',
+                'Low': 'min',
+                'Close': 'last',
+                'Volume': 'sum'
+            }).dropna()
+            timeframe_name = "月足"
+        else:
+            raise ValueError(f"サポートされていない時間軸: {self.timeframe}")
+        
+        self.data = resampled_data
+        print(f"  {self.symbol}: 日足データを{timeframe_name}データにリサンプリング ({len(resampled_data)}件)")
+        
+        return self.data
+    
     def calculate_macd(self, fast=12, slow=26, signal=9):
         """MACD、シグナル、ヒストグラムを計算"""
         close = self.data['Close']
         
+        # 時間軸に応じてパラメータを調整
+        if self.timeframe == 'D':
+            # 日足の場合はパラメータを調整（月足の約20倍）
+            fast_adj = fast * 20
+            slow_adj = slow * 20
+            signal_adj = signal * 20
+        elif self.timeframe == 'W':
+            # 週足の場合はパラメータを調整（月足の約4倍）
+            fast_adj = fast * 4
+            slow_adj = slow * 4
+            signal_adj = signal * 4
+        else:
+            # 月足の場合はデフォルトパラメータ
+            fast_adj = fast
+            slow_adj = slow
+            signal_adj = signal
+        
         # 指数移動平均の計算
-        ema_fast = close.ewm(span=fast).mean()
-        ema_slow = close.ewm(span=slow).mean()
+        ema_fast = close.ewm(span=fast_adj).mean()
+        ema_slow = close.ewm(span=slow_adj).mean()
         
         # MACD計算
         macd = ema_fast - ema_slow
-        signal_line = macd.ewm(span=signal).mean()
+        signal_line = macd.ewm(span=signal_adj).mean()
         histogram = macd - signal_line
         
         # データフレームに追加
         self.data['MACD'] = macd
         self.data['Signal'] = signal_line
         self.data['Histogram'] = histogram
+        
+        print(f"  {self.symbol}: MACD計算完了 (fast={fast_adj}, slow={slow_adj}, signal={signal_adj})")
         
         return self.data
     
@@ -198,6 +474,15 @@ class MACDBacktester:
         if not self.fetch_data():
             return None
         
+        # 日足データを指定された時間軸にリサンプリング
+        self.resample_data()
+        
+        # 十分なデータがあるかチェック（時間軸に応じた最小データ数）
+        min_data_points = 26 if self.timeframe == 'M' else (26 * 4 if self.timeframe == 'W' else 26 * 20)
+        if len(self.data) < min_data_points:
+            print(f"  {self.symbol}: データが不十分です ({len(self.data)}件, 必要:{min_data_points}件)")
+            return None
+        
         # MACD計算
         self.calculate_macd()
         
@@ -240,8 +525,9 @@ class MACDBacktester:
         drawdown = (cumulative - rolling_max) / rolling_max
         max_drawdown = drawdown.min()
         
-        # シャープレシオ
-        sharpe = strategy_returns.mean() / strategy_returns.std() * np.sqrt(12) if strategy_returns.std() > 0 else 0
+        # シャープレシオ（時間軸に応じた年率化）
+        periods_per_year = 252 if self.timeframe == 'D' else (52 if self.timeframe == 'W' else 12)
+        sharpe = strategy_returns.mean() / strategy_returns.std() * np.sqrt(periods_per_year) if strategy_returns.std() > 0 else 0
         
         self.results = {
             'symbol': self.symbol,
@@ -251,7 +537,7 @@ class MACDBacktester:
             'win_rate': win_rate,
             'max_drawdown': max_drawdown,
             'sharpe_ratio': sharpe,
-            'volatility': strategy_returns.std() * np.sqrt(12)
+            'volatility': strategy_returns.std() * np.sqrt(periods_per_year)
         }
         
         return self.results
@@ -490,13 +776,13 @@ class MACDBacktester:
             print(f"年率ボラティリティ: {self.results['volatility']:.2%}")
 
 
-def analyze_multiple_stocks(symbols, start_date, end_date):
+def analyze_multiple_stocks(symbols, start_date, end_date, timeframe='M'):
     """複数銘柄の分析"""
     results = []
     
     for symbol in symbols:
         print(f"\n{symbol}を分析中...")
-        backtester = MACDBacktester(symbol, start_date, end_date)
+        backtester = MACDBacktester(symbol, start_date, end_date, timeframe)
         data = backtester.backtest()
         
         if data is not None:
@@ -526,24 +812,26 @@ if __name__ == "__main__":
     
     # 分析対象銘柄（例：日本の代表的な銘柄）
     symbols = [
-        "7203",  # トヨタ自動車
-        "6758",  # ソニーグループ
-        "9984",  # ソフトバンクグループ
-        "6861",  # キーエンス
-        "4519",  # 中外製薬
-        "8306",  # 三菱UFJフィナンシャル・グループ
-        "6098",  # リクルートホールディングス
-        "4063",  # 信越化学工業
-        "9983",  # ファーストリテイリング
-        "7974"  # 任天堂
+        "7203.T",   # トヨタ自動車
+        "6758.T",   # ソニーグループ
+        "9984.T",   # ソフトバンクグループ
+        "6861.T",   # キーエンス
+        "4519.T",   # 中外製薬
+        "8306.T",   # 三菱UFJフィナンシャル・グループ
+        "6098.T",   # リクルートホールディングス
+        "4063.T",   # 信越化学工業
+        "9983.T",   # ファーストリテイリング
+        "7974.T",   # 任天堂
+        "NIY=F",    # 日経平均先物
+        "ES=F",     # S&P500 mini先物
     ]
     
     # 複数銘柄の分析実行
     # results_df = analyze_multiple_stocks(symbols, start_date, end_date)
     
     # 個別銘柄の詳細分析例
-    print("\n=== 個別分析例 ===")
-    backtester = MACDBacktester("4519", start_date, end_date)
+    print("\n=== 個別分析例（月足） ===")
+    backtester = MACDBacktester("ES=F", start_date, end_date, timeframe='M')
     data = backtester.backtest()
     
     if data is not None:

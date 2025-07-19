@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedSymbols = getSelectedSymbols();
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
+        const timeframe = document.getElementById('timeframe').value;
 
         if (selectedSymbols.length === 0) {
             alert('分析する銘柄を選択してください。');
@@ -36,7 +37,8 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({
                 symbols: selectedSymbols,
                 start_date: startDate,
-                end_date: endDate
+                end_date: endDate,
+                timeframe: timeframe
             })
         })
         .then(response => response.json())
@@ -150,13 +152,15 @@ document.addEventListener('DOMContentLoaded', function() {
     window.showChart = function(symbol) {
         const startDate = document.getElementById('startDate').value;
         const endDate = document.getElementById('endDate').value;
+        const timeframe = document.getElementById('timeframe').value;
         
         const chartModalTitle = document.getElementById('chartModalTitle');
         const chartLoading = document.getElementById('chartLoading');
         const chartImage = document.getElementById('chartImage');
         const chartError = document.getElementById('chartError');
 
-        chartModalTitle.textContent = `${symbol} - 詳細チャート`;
+        const timeframeNames = {'D': '日足', 'W': '週足', 'M': '月足'};
+        chartModalTitle.textContent = `${symbol} - 詳細チャート (${timeframeNames[timeframe]})`;
         
         // 初期状態
         chartLoading.classList.remove('d-none');
@@ -166,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         chartModal.show();
 
-        fetch(`/chart/${symbol}?start_date=${startDate}&end_date=${endDate}`)
+        fetch(`/chart/${symbol}?start_date=${startDate}&end_date=${endDate}&timeframe=${timeframe}`)
             .then(response => response.json())
             .then(data => {
                 chartLoading.classList.add('d-none');

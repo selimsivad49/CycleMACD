@@ -32,16 +32,17 @@ matplotlib.rc('font', **font)
 
 # Default Japanese stock symbols
 DEFAULT_SYMBOLS = [
-    {"code": "7203", "name": "トヨタ自動車"},
-    {"code": "6758", "name": "ソニーグループ"},
-    {"code": "9984", "name": "ソフトバンクグループ"},
-    {"code": "6861", "name": "キーエンス"},
-    {"code": "4519", "name": "中外製薬"},
-    {"code": "8306", "name": "三菱UFJフィナンシャル・グループ"},
-    {"code": "6098", "name": "リクルートホールディングス"},
-    {"code": "4063", "name": "信越化学工業"},
-    {"code": "9983", "name": "ファーストリテイリング"},
-    {"code": "7974", "name": "任天堂"}
+    {"code": "7203.T", "name": "トヨタ自動車"},
+    {"code": "6758.T", "name": "ソニーグループ"},
+    {"code": "9984.T", "name": "ソフトバンクグループ"},
+    {"code": "6861.T", "name": "キーエンス"},
+    {"code": "4519.T", "name": "中外製薬"},
+    {"code": "8306.T", "name": "三菱UFJフィナンシャル・グループ"},
+    {"code": "6098.T", "name": "リクルートホールディングス"},
+    {"code": "4063.T", "name": "信越化学工業"},
+    {"code": "9983.T", "name": "ファーストリテイリング"},
+    {"code": "7974.T", "name": "任天堂"},
+    {"code": "NIY=F", "name": "日経平均先物"},
 ]
 
 @app.route('/')
@@ -55,8 +56,9 @@ def analyze():
     try:
         data = request.get_json()
         symbols = data.get('symbols', [])
-        start_date = data.get('start_date', '2020-01-01')
+        start_date = data.get('start_date', '2000-01-01')
         end_date = data.get('end_date', '2024-12-31')
+        timeframe = data.get('timeframe', 'M')  # デフォルトは月足
         
         if not symbols:
             return jsonify({'error': '銘柄を選択してください'}), 400
@@ -64,7 +66,7 @@ def analyze():
         # 複数銘柄の分析実行
         results = []
         for symbol in symbols:
-            backtester = MACDBacktester(symbol, start_date, end_date)
+            backtester = MACDBacktester(symbol, start_date, end_date, timeframe)
             data_result = backtester.backtest()
             
             if data_result is not None:
@@ -94,10 +96,11 @@ def analyze():
 def generate_chart(symbol):
     """個別銘柄のチャートを生成"""
     try:
-        start_date = request.args.get('start_date', '2020-01-01')
+        start_date = request.args.get('start_date', '2000-01-01')
         end_date = request.args.get('end_date', '2024-12-31')
+        timeframe = request.args.get('timeframe', 'M')  # デフォルトは月足
         
-        backtester = MACDBacktester(symbol, start_date, end_date)
+        backtester = MACDBacktester(symbol, start_date, end_date, timeframe)
         data = backtester.backtest()
         
         if data is None:

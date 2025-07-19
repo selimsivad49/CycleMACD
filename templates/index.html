@@ -32,15 +32,23 @@
                     <div class="card-body">
                         <form id="analysisForm">
                             <div class="row">
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label for="startDate" class="form-label">開始日</label>
                                     <input type="date" class="form-control" id="startDate" value="2020-01-01">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label for="endDate" class="form-label">終了日</label>
                                     <input type="date" class="form-control" id="endDate" value="2024-12-31">
                                 </div>
-                                <div class="col-md-4 d-flex align-items-end">
+                                <div class="col-md-3">
+                                    <label for="timeframe" class="form-label">時間軸</label>
+                                    <select class="form-select" id="timeframe">
+                                        <option value="M" selected>月足</option>
+                                        <option value="W">週足</option>
+                                        <option value="D">日足</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end">
                                     <button type="submit" class="btn btn-primary w-100">
                                         <i class="fas fa-play me-2"></i>
                                         分析開始
