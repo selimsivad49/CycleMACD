@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CycleMacd バックテスト結果 - {{ params.symbol if params else 'エラー' }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .result-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem 0; }
+        .param-badge { background-color: rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: 20px; margin: 0.25rem; display: inline-block; }
+        .metric-card { border-left: 4px solid #007bff; }
+        .metric-card.positive { border-left-color: #28a745; }
+        .metric-card.negative { border-left-color: #dc3545; }
+        .chart-container { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 1rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
+        .trade-summary { background: #f8f9fa; border-radius: 8px; padding: 1.5rem; }
+        .error-container { background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; color: #721c24; padding: 2rem; text-align: center; }
+        @media print { 
+            .no-print { display: none !important; }
+            body { font-size: 12px; }
+            .chart-container img { max-width: 100%; height: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="result-header no-print">
+        <div class="container">
+            <h1><i class="fas fa-chart-line me-3"></i>CycleMacd バックテスト結果</h1>
+            {% if params %}
+            <div class="mt-3">
+                <span class="param-badge"><i class="fas fa-building me-2"></i>{{ params.symbol }}</span>
+                <span class="param-badge"><i class="fas fa-calendar me-2"></i>{{ params.start_date }} ～ {{ params.end_date }}</span>
+                <span class="param-badge"><i class="fas fa-clock me-2"></i>
+                    {% if params.timeframe == 'D' %}日足
+                    {% elif params.timeframe == 'W' %}週足
+                    {% else %}月足{% endif %}
+                </span>
+                <span class="param-badge"><i class="fas fa-cogs me-2"></i>{{ params.strategy }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="container mt-4">
+        {% if error %}
+        <div class="error-container">
+            <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+            <h3>エラーが発生しました</h3>
+            <p class="mb-0">{{ error }}</p>
+            {% if params %}
+            <div class="mt-3">
+                <small class="text-muted">
+                    リクエストパラメータ: symbol={{ params.symbol }}, start_date={{ params.start_date }}, 
+                    end_date={{ params.end_date }}, timeframe={{ params.timeframe }}, strategy={{ params.strategy }}
+                </small>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+
+        <!-- パフォーマンスサマリー -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2 class="mb-3"><i class="fas fa-trophy me-2"></i>パフォーマンスサマリー</h2>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card {% if results.total_return_strategy > 0 %}positive{% else %}negative{% endif %}">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">戦略リターン</h5>
+                        <h3 class="{% if results.total_return_strategy > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ "%.2f"|format(results.total_return_strategy * 100) }}%
+                        </h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">市場リターン</h5>
+                        <h3 class="{% if results.total_return_market > 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ "%.2f"|format(results.total_return_market * 100) }}%
+                        </h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">勝率</h5>
+                        <h3 class="text-info">{{ "%.1f"|format(results.win_rate * 100) }}%</h3>
+                        <small class="text-muted">{{ results.trades }}取引</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">シャープレシオ</h5>
+                        <h3 class="text-primary">{{ "%.2f"|format(results.sharpe_ratio) }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 詳細統計 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3 class="mb-3"><i class="fas fa-chart-bar me-2"></i>詳細統計</h3>
+            </div>
+            <div class="col-md-6">
+                <div class="trade-summary">
+                    <h5>リスク指標</h5>
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>最大ドローダウン:</strong><br>
+                            <span class="text-danger">{{ "%.2f"|format(results.max_drawdown * 100) }}%</span>
+                        </div>
+                        <div class="col-6">
+                            <strong>年率ボラティリティ:</strong><br>
+                            <span class="text-warning">{{ "%.2f"|format(results.volatility * 100) }}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="trade-summary">
+                    <h5>取引統計</h5>
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>総取引数:</strong><br>
+                            <span class="text-info">{{ trade_statistics.overall.total_trades if trade_statistics.overall else 0 }}</span>
+                        </div>
+                        <div class="col-6">
+                            <strong>P/L比:</strong><br>
+                            <span class="text-primary">{{ "%.2f"|format(trade_statistics.overall.pl_ratio) if trade_statistics.overall else 'N/A' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Long/Short統計 -->
+        {% if trade_statistics and trade_statistics.by_direction %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3 class="mb-3"><i class="fas fa-exchange-alt me-2"></i>Long/Short別統計</h3>
+            </div>
+            <div class="stats-grid">
+                {% for direction, stats in trade_statistics.by_direction.items() %}
+                <div class="card">
+                    <div class="card-header {% if direction == 'LONG' %}bg-success{% else %}bg-danger{% endif %} text-white">
+                        <h5 class="mb-0">{{ direction }}取引</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">取引数:</small><br>
+                                <strong>{{ stats.trade_count }}</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">勝率:</small><br>
+                                <strong>{{ "%.1f"|format(stats.win_rate) }}%</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">総損益:</small><br>
+                                <strong class="{% if stats.total_profit > 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {{ "%.2f"|format(stats.total_profit) }}
+                                </strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">P/L比:</small><br>
+                                <strong>{{ "%.2f"|format(stats.pl_ratio) }}</strong>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <small class="text-muted">最大ドローダウン:</small><br>
+                                <strong class="text-danger">{{ "%.2f"|format(stats.max_drawdown) }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- チャート表示 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3 class="mb-3"><i class="fas fa-chart-area me-2"></i>チャート分析</h3>
+                <div class="chart-container">
+                    {% if chart_data %}
+                    <img src="data:image/png;base64,{{ chart_data }}" class="img-fluid" alt="バックテストチャート">
+                    {% else %}
+                    <div class="text-center text-muted py-5">
+                        <i class="fas fa-chart-line fa-3x mb-3"></i>
+                        <p>チャートデータが利用できません</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 実行情報 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="fas fa-info-circle me-2"></i>実行情報</h6>
+                        <small class="text-muted">
+                            実行日時: <span id="datetime"></span><br>
+                            CycleMacd バックテストシステム v1.0<br>
+                            URL: {{ request.url }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- 印刷ボタン -->
+    <div class="fixed-bottom p-3 no-print">
+        <div class="container text-end">
+            <button class="btn btn-secondary" onclick="window.print()">
+                <i class="fas fa-print me-2"></i>印刷/保存
+            </button>
+            <a href="/" class="btn btn-primary ms-2">
+                <i class="fas fa-home me-2"></i>ホームに戻る
+            </a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 現在の日時を表示
+        document.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            const datetime = now.getFullYear() + '-' + 
+                           String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                           String(now.getDate()).padStart(2, '0') + ' ' + 
+                           String(now.getHours()).padStart(2, '0') + ':' + 
+                           String(now.getMinutes()).padStart(2, '0') + ':' + 
+                           String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('datetime').textContent = datetime;
+        });
+    </script>
+</body>
+</html>

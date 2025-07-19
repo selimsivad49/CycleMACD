@@ -154,3 +154,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+yf_history.db

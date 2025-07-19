@@ -22,33 +22,63 @@ plt.rcParams['axes.unicode_minus'] = False
 # matplotlib.font_manager.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 import japanize_matplotlib
 
-# Import our MACD backtester
-from cyclemacd import MACDBacktester, analyze_multiple_stocks
+# Import from modular components
+from strategies import MACDBacktester, analyze_multiple_stocks
+from utils import create_default_japanese_symbols
+from data_manager import StockDataManager
 
 app = Flask(__name__)
 
 font = {"family":"IPAexGothic"}
 matplotlib.rc('font', **font)
 
-# Default Japanese stock symbols
-DEFAULT_SYMBOLS = [
-    {"code": "7203.T", "name": "トヨタ自動車"},
-    {"code": "6758.T", "name": "ソニーグループ"},
-    {"code": "9984.T", "name": "ソフトバンクグループ"},
-    {"code": "6861.T", "name": "キーエンス"},
-    {"code": "4519.T", "name": "中外製薬"},
-    {"code": "8306.T", "name": "三菱UFJフィナンシャル・グループ"},
-    {"code": "6098.T", "name": "リクルートホールディングス"},
-    {"code": "4063.T", "name": "信越化学工業"},
-    {"code": "9983.T", "name": "ファーストリテイリング"},
-    {"code": "7974.T", "name": "任天堂"},
-    {"code": "NIY=F", "name": "日経平均先物"},
-]
+# Database manager instance
+db_manager = StockDataManager()
 
 @app.route('/')
 def index():
-    """メインページ"""
+    """パラメータ選択ページ"""
+    # DBから登録済みシンボルを取得
+    registered_symbols = db_manager.get_all_registered_symbols()
+    
+    # デフォルトの日付範囲
+    from datetime import datetime, timedelta
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    start_date = (datetime.now() - timedelta(days=365*5)).strftime('%Y-%m-%d')  # 5年前
+    
+    return render_template('parameter_selection.html', 
+                         symbols=registered_symbols,
+                         default_start_date=start_date,
+                         default_end_date=end_date)
+
+@app.route('/old')
+def old_index():
+    """旧メインページ（後方互換性のため）"""
+    # Default Japanese stock symbols from utils module
+    DEFAULT_SYMBOLS = create_default_japanese_symbols()
     return render_template('index.html', symbols=DEFAULT_SYMBOLS)
+
+@app.route('/add_symbol', methods=['POST'])
+def add_symbol():
+    """新しいシンボルを追加"""
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol', '').strip().upper()
+        
+        if not symbol:
+            return jsonify({'error': 'シンボルが指定されていません'}), 400
+        
+        # 新しいシンボルを追加
+        company_name = db_manager.add_symbol_with_name(symbol)
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol,
+            'company_name': company_name
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'シンボル追加中にエラーが発生しました: {str(e)}'}), 500
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -170,6 +200,116 @@ def generate_chart(symbol):
         
     except Exception as e:
         return jsonify({'error': f'チャート生成中にエラーが発生しました: {str(e)}'}), 500
+
+@app.route('/backtest')
+def get_backtest():
+    """GET方式でのバックテスト実行（保存用1画面表示）"""
+    try:
+        # パラメータ取得
+        symbol = request.args.get('symbol')
+        start_date = request.args.get('start_date', '2020-01-01')
+        end_date = request.args.get('end_date', '2024-12-31')
+        timeframe = request.args.get('timeframe', 'M')
+        strategy = request.args.get('strategy', 'CycleMacd')
+        
+        # パラメータ検証
+        if not symbol:
+            return render_template('backtest_result.html', 
+                                 error="シンボルが指定されていません。", 
+                                 params={'symbol': '', 'start_date': start_date, 
+                                        'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+        
+        if timeframe not in ['D', 'W', 'M']:
+            return render_template('backtest_result.html', 
+                                 error="無効な時間軸です。D（日足）、W（週足）、M（月足）のいずれかを指定してください。", 
+                                 params={'symbol': symbol, 'start_date': start_date, 
+                                        'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+        
+        if strategy.lower() not in ['cyclemacd', 'cycle_macd']:
+            return render_template('backtest_result.html', 
+                                 error="サポートされていない戦略です。現在はCycleMACDのみサポートしています。", 
+                                 params={'symbol': symbol, 'start_date': start_date, 
+                                        'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+        
+        # バックテスト実行
+        backtester = MACDBacktester(symbol, start_date, end_date, timeframe)
+        data = backtester.backtest()
+        
+        if data is None:
+            return render_template('backtest_result.html', 
+                                 error="データ取得またはバックテストに失敗しました。", 
+                                 params={'symbol': symbol, 'start_date': start_date, 
+                                        'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+        
+        # チャート生成
+        fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+        
+        # 1. 株価とシグナル
+        ax1 = axes[0]
+        ax1.plot(data.index, data['Close'], label='価格', linewidth=2, color='#2E86AB')
+        buy_signals = data[data['Signal_Buy'] == 1]
+        sell_signals = data[data['Signal_Sell'] == 1]
+        
+        ax1.scatter(buy_signals.index, buy_signals['Close'], 
+                   color='green', marker='^', s=100, label='買いシグナル', zorder=5)
+        ax1.scatter(sell_signals.index, sell_signals['Close'], 
+                   color='red', marker='v', s=100, label='売りシグナル', zorder=5)
+        
+        timeframe_names = {'D': '日足', 'W': '週足', 'M': '月足'}
+        ax1.set_title(f'{symbol} - 株価と売買シグナル ({timeframe_names[timeframe]})', fontsize=14, fontweight='bold')
+        ax1.set_ylabel('価格', fontsize=12)
+        ax1.legend(fontsize=10)
+        ax1.grid(True, alpha=0.3)
+        
+        # 2. MACDヒストグラム
+        ax2 = axes[1]
+        colors = ['#28a745' if x > 0 else '#dc3545' for x in data['Histogram']]
+        ax2.bar(data.index, data['Histogram'], color=colors, alpha=0.7)
+        ax2.axhline(y=0, color='black', linestyle='-', linewidth=1)
+        ax2.set_title('MACDヒストグラム', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('ヒストグラム', fontsize=12)
+        ax2.grid(True, alpha=0.3)
+        
+        # 3. 累積リターン比較
+        ax3 = axes[2]
+        ax3.plot(data.index, (data['Cumulative_Strategy'] - 1) * 100, 
+                label='CycleMacd戦略', linewidth=2, color='#007bff')
+        ax3.plot(data.index, (data['Cumulative_Returns'] - 1) * 100, 
+                label='バイ&ホールド', linewidth=2, alpha=0.7, color='#6c757d')
+        
+        ax3.set_title('累積リターン比較', fontsize=14, fontweight='bold')
+        ax3.set_ylabel('リターン (%)', fontsize=12)
+        ax3.set_xlabel('日付', fontsize=12)
+        ax3.legend(fontsize=10)
+        ax3.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # 画像をBase64エンコード
+        img = BytesIO()
+        plt.savefig(img, format='png', dpi=150, bbox_inches='tight')
+        img.seek(0)
+        chart_data = base64.b64encode(img.getvalue()).decode()
+        plt.close()
+        
+        # 取引統計取得
+        trade_stats = backtester.get_trade_statistics()
+        
+        # 結果データ準備
+        results = backtester.results
+        
+        return render_template('backtest_result.html', 
+                             results=results,
+                             trade_statistics=trade_stats,
+                             chart_data=chart_data,
+                             params={'symbol': symbol, 'start_date': start_date, 
+                                    'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+        
+    except Exception as e:
+        return render_template('backtest_result.html', 
+                             error=f'バックテスト実行中にエラーが発生しました: {str(e)}', 
+                             params={'symbol': symbol or '', 'start_date': start_date, 
+                                    'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
 
 @app.route('/health')
 def health_check():
