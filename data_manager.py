@@ -225,6 +225,11 @@ class StockDataManager:
             ticker = yf.Ticker(symbol)
             info = ticker.info
             
+            # シンボルが有効かチェック（infoが空またはregularMarketPriceがない場合は無効）
+            if not info or len(info) < 5:
+                print(f"  {symbol}: yfinanceで見つかりませんでした")
+                return None
+            
             # 会社名を取得（複数の属性を試す）
             company_name = None
             for name_field in ['longName', 'shortName', 'name']:
@@ -233,7 +238,9 @@ class StockDataManager:
                     break
             
             if not company_name:
-                company_name = symbol  # フォールバック
+                # 会社名が取得できない場合もシンボルが無効とみなす
+                print(f"  {symbol}: 会社名を取得できませんでした")
+                return None
             
             # DBに保存
             conn = sqlite3.connect(self.db_path)
@@ -249,7 +256,7 @@ class StockDataManager:
             
         except Exception as e:
             print(f"  {symbol}: 会社名取得エラー - {e}")
-            return symbol
+            return None
     
     def get_all_registered_symbols(self):
         """登録済みシンボルと会社名のリストを取得"""
@@ -281,8 +288,12 @@ class StockDataManager:
     
     def add_symbol_with_name(self, symbol):
         """新しいシンボルを会社名と共に追加"""
-        # まず会社名を取得
+        # まず会社名を取得（yfinanceで見つからない場合はNoneが返される）
         company_name = self.get_company_name(symbol)
+        
+        if company_name is None:
+            # yfinanceで見つからない場合はDBに登録しない
+            return None
         
         # シンボルテーブルを作成
         table_name = self.create_symbol_table(symbol)
@@ -359,4 +370,4 @@ def get_japanese_stock_data(symbol, start_date, end_date, db_manager=None):
 
 
 # グローバルインスタンス（後方互換性のため）
-db_manager = StockDataManager()
+# db_manager = StockDataManager()  # コメントアウト：必要時に初期化

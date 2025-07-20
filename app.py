@@ -71,6 +71,11 @@ def add_symbol():
         # 新しいシンボルを追加
         company_name = db_manager.add_symbol_with_name(symbol)
         
+        if company_name is None:
+            return jsonify({
+                'error': f'シンボル "{symbol}" はyfinanceで見つかりませんでした。正しいシンボルを入力してください。'
+            }), 400
+        
         return jsonify({
             'success': True,
             'symbol': symbol,
