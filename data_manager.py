@@ -194,9 +194,10 @@ class StockDataManager:
         yesterday = datetime.now() - timedelta(days=1)
         yesterday_str = yesterday.strftime('%Y-%m-%d')
         
-        # 更新が必要な範囲を計算
+        # 更新が必要な範囲を計算（要求終了日と昨日の早い方まで）
+        max_end_date = min(required_end, yesterday_str)
         fetch_start = required_start
-        fetch_end = yesterday_str
+        fetch_end = max_end_date
         
         # 必要な開始日がDBの開始日より前の場合
         if required_start_dt < first_date_dt:
@@ -206,12 +207,17 @@ class StockDataManager:
             fetch_start = None
         
         # 必要な終了日がDBの終了日より後の場合、または昨日より古い場合
+        max_end_date_dt = datetime.strptime(max_end_date, '%Y-%m-%d')
         if required_end_dt > last_date_dt or last_date_dt < yesterday:
             if fetch_start is None:
                 # 既存データの次の日から取得
                 next_day = last_date_dt + timedelta(days=1)
                 fetch_start = next_day.strftime('%Y-%m-%d')
-            fetch_end = yesterday_str
+            fetch_end = max_end_date
+            
+            # 実際に取得する必要があるかチェック
+            if fetch_start and datetime.strptime(fetch_start, '%Y-%m-%d') > max_end_date_dt:
+                return False, None, None
         else:
             if fetch_start is None:
                 return False, None, None
@@ -321,13 +327,16 @@ def get_japanese_stock_data(symbol, start_date, end_date, db_manager=None):
     
     print(f"  {symbol}のデータを取得中...")
     
-    # 1990-01-01から昨日までの完全なデータを確保
+    # 1990-01-01から要求された終了日までの完全なデータを確保
     full_start = "1990-01-01"
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     
+    # end_dateが昨日より未来の場合は昨日までに制限
+    actual_end_date = min(end_date, yesterday) if end_date <= yesterday else yesterday
+    
     try:
-        # データベースの更新が必要かチェック
-        needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, full_start, yesterday)
+        # データベースの更新が必要かチェック（要求された範囲のみ）
+        needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, start_date, actual_end_date)
         
         # 新しいデータが必要な場合、yfinanceから取得
         if needs_update and fetch_start and fetch_end:
