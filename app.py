@@ -24,7 +24,7 @@ import japanize_matplotlib
 
 # Import from modular components
 from strategies import MACDBacktester, analyze_multiple_stocks
-from utils import create_default_japanese_symbols
+from utils import create_default_japanese_symbols, get_default_judgment_date
 from data_manager import StockDataManager
 from screening import ScreeningEngine, get_available_markets, get_market_symbols
 
@@ -47,10 +47,14 @@ def index():
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=365*5)).strftime('%Y-%m-%d')  # 5年前
     
+    # デフォルトの判定日（日本時間に基づく）
+    default_judgment_date = get_default_judgment_date()
+    
     return render_template('parameter_selection.html', 
                          symbols=registered_symbols,
                          default_start_date=start_date,
-                         default_end_date=end_date)
+                         default_end_date=end_date,
+                         default_judgment_date=default_judgment_date)
 
 @app.route('/old')
 def old_index():
@@ -324,33 +328,47 @@ def run_screening():
         # パラメータ取得
         condition = request.args.get('condition')
         market = request.args.get('market')
+        judgment_date = request.args.get('judgment_date')
         
         # パラメータ検証
         if not condition:
             return render_template('screening_result.html', 
                                  error="スクリーニング条件が指定されていません。", 
-                                 params={'condition': '', 'market': market})
+                                 params={'condition': '', 'market': market, 'judgment_date': judgment_date})
         
         if not market:
             return render_template('screening_result.html', 
                                  error="対象市場が指定されていません。", 
-                                 params={'condition': condition, 'market': ''})
+                                 params={'condition': condition, 'market': '', 'judgment_date': judgment_date})
+        
+        if not judgment_date:
+            return render_template('screening_result.html', 
+                                 error="判定日が指定されていません。", 
+                                 params={'condition': condition, 'market': market, 'judgment_date': ''})
+        
+        # 判定日の妥当性チェック
+        from utils import validate_judgment_date
+        is_valid, error_msg = validate_judgment_date(judgment_date)
+        if not is_valid:
+            return render_template('screening_result.html', 
+                                 error=f"判定日エラー: {error_msg}", 
+                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
         # 市場シンボルを取得
         symbol_list = get_market_symbols(market)
         if not symbol_list:
             return render_template('screening_result.html', 
                                  error=f"市場 '{market}' のシンボルリストが見つかりません。", 
-                                 params={'condition': condition, 'market': market})
+                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
         # スクリーニング実行
         screening_engine = ScreeningEngine()
-        results = screening_engine.run_screening(condition, symbol_list)
+        results = screening_engine.run_screening(condition, symbol_list, judgment_date=judgment_date)
         
         if 'error' in results:
             return render_template('screening_result.html', 
                                  error=results['error'], 
-                                 params={'condition': condition, 'market': market})
+                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
         # 市場名を取得
         available_markets = get_available_markets()
@@ -359,12 +377,12 @@ def run_screening():
         return render_template('screening_result.html', 
                              results=results,
                              market_name=market_name,
-                             params={'condition': condition, 'market': market})
+                             params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
     except Exception as e:
         return render_template('screening_result.html', 
                              error=f'スクリーニング実行中にエラーが発生しました: {str(e)}', 
-                             params={'condition': condition or '', 'market': market or ''})
+                             params={'condition': condition or '', 'market': market or '', 'judgment_date': judgment_date or ''})
 
 @app.route('/health')
 def health_check():

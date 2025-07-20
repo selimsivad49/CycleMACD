@@ -152,6 +152,16 @@
                             <small class="form-text text-muted">スクリーニング対象とする市場インデックス</small>
                         </div>
 
+                        <!-- 判定日選択 -->
+                        <div class="form-group">
+                            <label class="form-label">
+                                <i class="fas fa-calendar-day me-2"></i>判定日
+                            </label>
+                            <input type="date" class="form-control" id="judgmentDate" name="judgment_date" 
+                                   value="{{ default_judgment_date }}" required>
+                            <small class="form-text text-muted">スクリーニング条件を判定する基準日（日本時間0-9時は前日、土日は前金曜日がデフォルト）</small>
+                        </div>
+
                         <!-- スクリーニング実行ボタン -->
                         <div class="text-center mt-4">
                             <button type="submit" class="btn btn-success btn-lg">

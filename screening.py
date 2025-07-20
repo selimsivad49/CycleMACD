@@ -21,12 +21,13 @@ class HalfSignal:
         self.name = "半分シグナル"
         self.description = "5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け"
     
-    def check_condition(self, symbol, period_days=100):
+    def check_condition(self, symbol, judgment_date=None, period_days=100):
         """
         スクリーニング条件をチェック
         
         Args:
             symbol: チェック対象シンボル
+            judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
             period_days: データ取得期間（日数）
         
         Returns:
@@ -38,9 +39,16 @@ class HalfSignal:
             }
         """
         try:
-            # データ取得
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=period_days)).strftime('%Y-%m-%d')
+            # 判定日の設定
+            if judgment_date:
+                end_date = judgment_date
+                end_dt = datetime.strptime(judgment_date, '%Y-%m-%d')
+            else:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                end_dt = datetime.now()
+            
+            # データ取得開始日
+            start_date = (end_dt - timedelta(days=period_days)).strftime('%Y-%m-%d')
             
             data = get_japanese_stock_data(symbol, start_date, end_date)
             
@@ -144,13 +152,14 @@ class ScreeningEngine:
             for name, condition in self.conditions.items()
         }
     
-    def run_screening(self, condition_name, symbol_list, max_concurrent=5):
+    def run_screening(self, condition_name, symbol_list, judgment_date=None, max_concurrent=5):
         """
         スクリーニングを実行
         
         Args:
             condition_name: スクリーニング条件名
             symbol_list: チェック対象シンボルリスト
+            judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
             max_concurrent: 同時処理数
         
         Returns:
@@ -170,11 +179,13 @@ class ScreeningEngine:
         
         print(f"スクリーニング開始: {condition.name}")
         print(f"対象銘柄数: {len(symbol_list)}")
+        if judgment_date:
+            print(f"判定日: {judgment_date}")
         
         for i, symbol in enumerate(symbol_list, 1):
             print(f"  {i}/{len(symbol_list)}: {symbol} をチェック中...")
             
-            result = condition.check_condition(symbol)
+            result = condition.check_condition(symbol, judgment_date=judgment_date)
             results.append(result)
             
             if 'error' in result:
@@ -187,6 +198,7 @@ class ScreeningEngine:
         return {
             'condition_name': condition_name,
             'condition_description': condition.description,
+            'judgment_date': judgment_date,
             'total_checked': len(symbol_list),
             'passed_count': len(passed_symbols),
             'failed_count': len(failed_symbols),

@@ -250,3 +250,70 @@ def create_performance_summary_dict(strategy_returns, market_returns, trades, ti
         'sharpe_ratio': sharpe_ratio,
         'volatility': volatility
     }
+
+
+def get_default_judgment_date():
+    """
+    日本時間に基づいてスクリーニングの判定日を取得
+    
+    Rules:
+    - 日本時間0-9時: 前日
+    - 土曜日: 前金曜日
+    - 日曜日: 前金曜日
+    - 月曜日～金曜日 10時以降: 当日
+    """
+    from datetime import datetime, timedelta
+    
+    # UTCから日本時間を計算 (UTC+9)
+    now_utc = datetime.utcnow()
+    now_jst = now_utc + timedelta(hours=9)
+    
+    # 時間チェック (0-9時の場合は前日)
+    if now_jst.hour < 10:
+        target_date = now_jst.date() - timedelta(days=1)
+    else:
+        target_date = now_jst.date()
+    
+    # 曜日チェック (土日の場合は前の金曜日)
+    weekday = target_date.weekday()  # 0=月曜日, 6=日曜日
+    
+    if weekday == 5:  # 土曜日
+        target_date = target_date - timedelta(days=1)  # 金曜日
+    elif weekday == 6:  # 日曜日
+        target_date = target_date - timedelta(days=2)  # 金曜日
+    
+    return target_date.strftime('%Y-%m-%d')
+
+
+def get_trading_day_before(date_str, days=1):
+    """指定した日付から指定日数前の取引日を取得"""
+    from datetime import datetime, timedelta
+    
+    date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    
+    for _ in range(days):
+        date = date - timedelta(days=1)
+        # 土日を避ける
+        while date.weekday() >= 5:  # 土曜日(5)、日曜日(6)
+            date = date - timedelta(days=1)
+    
+    return date.strftime('%Y-%m-%d')
+
+
+def validate_judgment_date(date_str):
+    """判定日の妥当性をチェック"""
+    try:
+        date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        today = datetime.now().date()
+        
+        if date > today:
+            return False, "判定日は今日以前の日付を指定してください"
+        
+        # あまりに古い日付もチェック
+        min_date = datetime(1990, 1, 1).date()
+        if date < min_date:
+            return False, "判定日は1990年1月1日以降を指定してください"
+        
+        return True, "OK"
+    except ValueError:
+        return False, "日付形式が正しくありません (YYYY-MM-DD)"

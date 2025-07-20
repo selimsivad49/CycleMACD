@@ -39,6 +39,7 @@
             <div class="mt-3">
                 <span class="param-badge"><i class="fas fa-search me-2"></i>{{ results.condition_description if results else params.condition }}</span>
                 <span class="param-badge"><i class="fas fa-chart-bar me-2"></i>{{ market_name if market_name else params.market }}</span>
+                <span class="param-badge"><i class="fas fa-calendar-day me-2"></i>{{ results.judgment_date if results else params.judgment_date }}</span>
                 {% if results %}
                 <span class="param-badge"><i class="fas fa-check me-2"></i>{{ results.passed_count }}/{{ results.total_checked }} 件通過</span>
                 {% endif %}
@@ -248,6 +249,7 @@
                             実行日時: <span id="datetime"></span><br>
                             スクリーニング条件: {{ results.condition_description if results else params.condition }}<br>
                             対象市場: {{ market_name if market_name else params.market }}<br>
+                            判定日: {{ results.judgment_date if results else params.judgment_date }}<br>
                             CycleMacd スクリーニングシステム v1.0<br>
                             URL: {{ request.url }}
                         </small>
