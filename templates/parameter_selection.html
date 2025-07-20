@@ -120,6 +120,47 @@
                     </form>
                 </div>
 
+                <!-- スクリーニングセクション -->
+                <div class="form-container mt-4">
+                    <h4 class="text-center mb-4">
+                        <i class="fas fa-filter me-3"></i>株式スクリーニング
+                    </h4>
+                    
+                    <form id="screeningForm">
+                        <!-- スクリーニング条件選択 -->
+                        <div class="form-group">
+                            <label class="form-label">
+                                <i class="fas fa-search me-2"></i>スクリーニング条件
+                            </label>
+                            <select class="form-select custom-select" id="screeningCondition" name="condition" required>
+                                <option value="">条件を選択してください</option>
+                                <option value="halfsignal">半分シグナル</option>
+                            </select>
+                            <small class="form-text text-muted">5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け</small>
+                        </div>
+
+                        <!-- 対象市場選択 -->
+                        <div class="form-group">
+                            <label class="form-label">
+                                <i class="fas fa-chart-bar me-2"></i>対象市場
+                            </label>
+                            <select class="form-select custom-select" id="targetMarket" name="market" required>
+                                <option value="">市場を選択してください</option>
+                                <option value="nikkei225">日経225</option>
+                                <option value="jpx400">JPX400</option>
+                            </select>
+                            <small class="form-text text-muted">スクリーニング対象とする市場インデックス</small>
+                        </div>
+
+                        <!-- スクリーニング実行ボタン -->
+                        <div class="text-center mt-4">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-filter me-2"></i>スクリーニング開始
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
                 <!-- アラートエリア -->
                 <div id="alertArea" class="mt-3"></div>
 
@@ -197,6 +238,21 @@
             
             // バックテストページにリダイレクト
             window.open(`/backtest?${params.toString()}`, '_blank');
+        });
+
+        // スクリーニングフォーム送信処理
+        document.getElementById('screeningForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const params = new URLSearchParams();
+            
+            for (let [key, value] of formData.entries()) {
+                params.append(key, value);
+            }
+            
+            // スクリーニング結果ページにリダイレクト
+            window.open(`/screening?${params.toString()}`, '_blank');
         });
 
         // 手動入力でEnterキー押下時の処理

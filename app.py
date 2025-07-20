@@ -26,6 +26,7 @@ import japanize_matplotlib
 from strategies import MACDBacktester, analyze_multiple_stocks
 from utils import create_default_japanese_symbols
 from data_manager import StockDataManager
+from screening import ScreeningEngine, get_available_markets, get_market_symbols
 
 app = Flask(__name__)
 
@@ -93,7 +94,7 @@ def analyze():
         symbols = data.get('symbols', [])
         start_date = data.get('start_date', '2000-01-01')
         end_date = data.get('end_date', '2024-12-31')
-        timeframe = data.get('timeframe', 'M')  # デフォルトは月足
+        timeframe = data.get('timeframe', 'M')  # デフォルトは週足
         
         if not symbols:
             return jsonify({'error': '銘柄を選択してください'}), 400
@@ -212,9 +213,9 @@ def get_backtest():
     try:
         # パラメータ取得
         symbol = request.args.get('symbol')
-        start_date = request.args.get('start_date', '2020-01-01')
+        start_date = request.args.get('start_date', '2000-01-01')
         end_date = request.args.get('end_date', '2024-12-31')
-        timeframe = request.args.get('timeframe', 'M')
+        timeframe = request.args.get('timeframe', 'W')
         strategy = request.args.get('strategy', 'CycleMacd')
         
         # パラメータ検証
@@ -315,6 +316,55 @@ def get_backtest():
                              error=f'バックテスト実行中にエラーが発生しました: {str(e)}', 
                              params={'symbol': symbol or '', 'start_date': start_date, 
                                     'end_date': end_date, 'timeframe': timeframe, 'strategy': strategy})
+
+@app.route('/screening')
+def run_screening():
+    """GET方式でのスクリーニング実行"""
+    try:
+        # パラメータ取得
+        condition = request.args.get('condition')
+        market = request.args.get('market')
+        
+        # パラメータ検証
+        if not condition:
+            return render_template('screening_result.html', 
+                                 error="スクリーニング条件が指定されていません。", 
+                                 params={'condition': '', 'market': market})
+        
+        if not market:
+            return render_template('screening_result.html', 
+                                 error="対象市場が指定されていません。", 
+                                 params={'condition': condition, 'market': ''})
+        
+        # 市場シンボルを取得
+        symbol_list = get_market_symbols(market)
+        if not symbol_list:
+            return render_template('screening_result.html', 
+                                 error=f"市場 '{market}' のシンボルリストが見つかりません。", 
+                                 params={'condition': condition, 'market': market})
+        
+        # スクリーニング実行
+        screening_engine = ScreeningEngine()
+        results = screening_engine.run_screening(condition, symbol_list)
+        
+        if 'error' in results:
+            return render_template('screening_result.html', 
+                                 error=results['error'], 
+                                 params={'condition': condition, 'market': market})
+        
+        # 市場名を取得
+        available_markets = get_available_markets()
+        market_name = available_markets.get(market, market)
+        
+        return render_template('screening_result.html', 
+                             results=results,
+                             market_name=market_name,
+                             params={'condition': condition, 'market': market})
+        
+    except Exception as e:
+        return render_template('screening_result.html', 
+                             error=f'スクリーニング実行中にエラーが発生しました: {str(e)}', 
+                             params={'condition': condition or '', 'market': market or ''})
 
 @app.route('/health')
 def health_check():
