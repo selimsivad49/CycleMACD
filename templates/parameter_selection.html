@@ -1,310 +1,488 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CycleMacd バックテスト - パラメータ選択</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem 0; }
-        .form-container { background: white; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 2rem; margin-top: -1rem; }
-        .form-group { margin-bottom: 1.5rem; }
-        .form-label { font-weight: 600; color: #333; }
-        .custom-select { min-height: 45px; }
-        .btn-primary { background: linear-gradient(45deg, #667eea, #764ba2); border: none; padding: 12px 30px; }
-        .btn-primary:hover { background: linear-gradient(45deg, #5a6fd8, #6a4190); }
-        .symbol-item { padding: 8px 12px; border-bottom: 1px solid #eee; }
-        .symbol-item:hover { background-color: #f8f9fa; }
-        .manual-input-section { background: #f8f9fa; border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
-        .alert { border-radius: 8px; }
-        .card-title { color: #667eea; }
-        #symbolList { max-height: 300px; overflow-y: auto; }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+      }
+      .form-container {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+        margin-top: -1rem;
+      }
+      .form-group {
+        margin-bottom: 1.5rem;
+      }
+      .form-label {
+        font-weight: 600;
+        color: #333;
+      }
+      .custom-select {
+        min-height: 45px;
+      }
+      .btn-primary {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        border: none;
+        padding: 12px 30px;
+      }
+      .btn-primary:hover {
+        background: linear-gradient(45deg, #5a6fd8, #6a4190);
+      }
+      .symbol-item {
+        padding: 8px 12px;
+        border-bottom: 1px solid #eee;
+      }
+      .symbol-item:hover {
+        background-color: #f8f9fa;
+      }
+      .manual-input-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+      }
+      .alert {
+        border-radius: 8px;
+      }
+      .card-title {
+        color: #667eea;
+      }
+      #symbolList {
+        max-height: 300px;
+        overflow-y: auto;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="header">
-        <div class="container">
-            <h1 class="text-center"><i class="fas fa-chart-line me-3"></i>CycleMacd バックテスト</h1>
-            <p class="text-center mb-0">パラメータを選択してバックテストを実行</p>
-        </div>
+      <div class="container">
+        <h1 class="text-center">
+          <i class="fas fa-chart-line me-3"></i>CycleMacd バックテスト
+        </h1>
+        <p class="text-center mb-0">パラメータを選択してバックテストを実行</p>
+      </div>
     </div>
 
     <div class="container mt-4">
-        <div class="row justify-content-center">
-            <div class="col-lg-8">
-                <div class="form-container">
-                    <form id="backtestForm">
-                        <!-- シンボル選択 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-building me-2"></i>銘柄選択
-                            </label>
-                            <select class="form-select custom-select" id="symbolSelect" name="symbol" required>
-                                <option value="">銘柄を選択してください</option>
-                                {% for symbol_info in symbols %}
-                                <option value="{{ symbol_info.symbol }}">
-                                    {{ symbol_info.symbol }} ({{ symbol_info.company_name }})
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <small class="form-text text-muted">データベースに登録済みの銘柄から選択</small>
-                        </div>
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+          <div class="form-container">
+            <form id="backtestForm">
+              <!-- シンボル選択 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-building me-2"></i>銘柄選択
+                </label>
+                <select
+                  class="form-select custom-select"
+                  id="symbolSelect"
+                  name="symbol"
+                  required
+                >
+                  <option value="">銘柄を選択してください</option>
+                  {% for symbol_info in symbols %}
+                  <option value="{{ symbol_info.symbol }}">
+                    {{ symbol_info.symbol }} ({{ symbol_info.company_name }})
+                  </option>
+                  {% endfor %}
+                </select>
+                <small class="form-text text-muted"
+                  >データベースに登録済みの銘柄から選択</small
+                >
+              </div>
 
-                        <!-- 手動入力セクション -->
-                        <div class="manual-input-section">
-                            <h6 class="card-title mb-3">
-                                <i class="fas fa-keyboard me-2"></i>新しい銘柄を手動入力
-                            </h6>
-                            <div class="row">
-                                <div class="col-md-8">
-                                    <input type="text" class="form-control" id="manualSymbol" placeholder="例: 1234.T, AAPL, NIY=F">
-                                </div>
-                                <div class="col-md-4">
-                                    <button type="button" class="btn btn-outline-primary w-100" id="addSymbolBtn">
-                                        <i class="fas fa-plus me-2"></i>追加
-                                    </button>
-                                </div>
-                            </div>
-                            <small class="form-text text-muted">新しい銘柄を追加すると自動的に会社名を取得します</small>
-                        </div>
-
-                        <!-- 開始日 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-calendar-alt me-2"></i>開始日
-                            </label>
-                            <input type="date" class="form-control" id="startDate" name="start_date" 
-                                   value="{{ default_start_date }}" required>
-                        </div>
-
-                        <!-- 終了日 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-calendar-check me-2"></i>終了日
-                            </label>
-                            <input type="date" class="form-control" id="endDate" name="end_date" 
-                                   value="{{ default_end_date }}" required>
-                        </div>
-
-                        <!-- 時間軸 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-clock me-2"></i>時間軸
-                            </label>
-                            <select class="form-select custom-select" id="timeframe" name="timeframe" required>
-                                <option value="D">日足 (Daily)</option>
-                                <option value="W">週足 (Weekly)</option>
-                                <option value="M" selected>月足 (Monthly)</option>
-                            </select>
-                        </div>
-
-                        <!-- 戦略 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-cogs me-2"></i>戦略
-                            </label>
-                            <select class="form-select custom-select" id="strategy" name="strategy" required>
-                                <option value="CycleMacd" selected>CycleMacd</option>
-                            </select>
-                            <small class="form-text text-muted">現在はCycleMacd戦略のみサポート</small>
-                        </div>
-
-                        <!-- 実行ボタン -->
-                        <div class="text-center mt-4">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-play me-2"></i>バックテスト実行
-                            </button>
-                        </div>
-                    </form>
+              <!-- 手動入力セクション -->
+              <div class="manual-input-section">
+                <h6 class="card-title mb-3">
+                  <i class="fas fa-keyboard me-2"></i>新しい銘柄を手動入力
+                </h6>
+                <div class="row">
+                  <div class="col-md-8">
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="manualSymbol"
+                      placeholder="例: 1234.T, AAPL, NIY=F"
+                    />
+                  </div>
+                  <div class="col-md-4">
+                    <button
+                      type="button"
+                      class="btn btn-outline-primary w-100"
+                      id="addSymbolBtn"
+                    >
+                      <i class="fas fa-plus me-2"></i>追加
+                    </button>
+                  </div>
                 </div>
+                <small class="form-text text-muted"
+                  >新しい銘柄を追加すると自動的に会社名を取得します</small
+                >
+              </div>
 
-                <!-- スクリーニングセクション -->
-                <div class="form-container mt-4">
-                    <h4 class="text-center mb-4">
-                        <i class="fas fa-filter me-3"></i>株式スクリーニング
-                    </h4>
-                    
-                    <form id="screeningForm">
-                        <!-- スクリーニング条件選択 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-search me-2"></i>スクリーニング条件
-                            </label>
-                            <select class="form-select custom-select" id="screeningCondition" name="condition" required>
-                                <option value="">条件を選択してください</option>
-                                <option value="halfsignal">半分シグナル</option>
-                            </select>
-                            <small class="form-text text-muted">5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け</small>
-                        </div>
+              <!-- 開始日 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-calendar-alt me-2"></i>開始日
+                </label>
+                <input
+                  type="date"
+                  class="form-control"
+                  id="startDate"
+                  name="start_date"
+                  value="{{ default_start_date }}"
+                  required
+                />
+              </div>
 
-                        <!-- 対象市場選択 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-chart-bar me-2"></i>対象市場
-                            </label>
-                            <select class="form-select custom-select" id="targetMarket" name="market" required>
-                                <option value="">市場を選択してください</option>
-                                <option value="nikkei225">日経225</option>
-                                <option value="jpx400">JPX400</option>
-                            </select>
-                            <small class="form-text text-muted">スクリーニング対象とする市場インデックス</small>
-                        </div>
+              <!-- 終了日 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-calendar-check me-2"></i>終了日
+                </label>
+                <input
+                  type="date"
+                  class="form-control"
+                  id="endDate"
+                  name="end_date"
+                  value="{{ default_end_date }}"
+                  required
+                />
+              </div>
 
-                        <!-- 判定日選択 -->
-                        <div class="form-group">
-                            <label class="form-label">
-                                <i class="fas fa-calendar-day me-2"></i>判定日
-                            </label>
-                            <input type="date" class="form-control" id="judgmentDate" name="judgment_date" 
-                                   value="{{ default_judgment_date }}" required>
-                            <small class="form-text text-muted">スクリーニング条件を判定する基準日（日本時間0-9時は前日、土日は前金曜日がデフォルト）</small>
-                        </div>
+              <!-- 時間軸 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-clock me-2"></i>時間軸
+                </label>
+                <select
+                  class="form-select custom-select"
+                  id="timeframe"
+                  name="timeframe"
+                  required
+                >
+                  <option value="D">日足 (Daily)</option>
+                  <option value="W">週足 (Weekly)</option>
+                  <option value="M" selected>月足 (Monthly)</option>
+                </select>
+              </div>
 
-                        <!-- スクリーニング実行ボタン -->
-                        <div class="text-center mt-4">
-                            <button type="submit" class="btn btn-success btn-lg">
-                                <i class="fas fa-filter me-2"></i>スクリーニング開始
-                            </button>
-                        </div>
-                    </form>
-                </div>
+              <!-- 戦略 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-cogs me-2"></i>戦略
+                </label>
+                <select
+                  class="form-select custom-select"
+                  id="strategy"
+                  name="strategy"
+                  required
+                >
+                  <option value="CycleMacd" selected>CycleMacd</option>
+                </select>
+                <small class="form-text text-muted"
+                  >現在はCycleMacd戦略のみサポート</small
+                >
+              </div>
 
-                <!-- アラートエリア -->
-                <div id="alertArea" class="mt-3"></div>
+              <!-- 実行ボタン -->
+              <div class="text-center mt-4">
+                <button type="submit" class="btn btn-primary btn-lg">
+                  <i class="fas fa-play me-2"></i>バックテスト実行
+                </button>
+              </div>
+            </form>
+          </div>
 
-                <!-- 旧インターフェースへのリンク -->
-                <div class="text-center mt-4">
-                    <a href="/old" class="btn btn-outline-secondary">
-                        <i class="fas fa-arrow-left me-2"></i>旧インターフェース
-                    </a>
-                </div>
-            </div>
+          <!-- スクリーニングセクション -->
+          <div class="form-container mt-4">
+            <h4 class="text-center mb-4">
+              <i class="fas fa-filter me-3"></i>株式スクリーニング
+            </h4>
+
+            <form id="screeningForm">
+              <!-- スクリーニング条件選択 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-search me-2"></i>スクリーニング条件
+                </label>
+                <select
+                  class="form-select custom-select"
+                  id="screeningCondition"
+                  name="condition"
+                  required
+                >
+                  <option value="">条件を選択してください</option>
+                  <option value="halfsignal">半分シグナル</option>
+                </select>
+                <small class="form-text text-muted"
+                  >5日SMA > 20日SMA >
+                  60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け</small
+                >
+              </div>
+
+              <!-- 対象市場選択 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-chart-bar me-2"></i>対象市場
+                </label>
+                <select
+                  class="form-select custom-select"
+                  id="targetMarket"
+                  name="market"
+                  required
+                >
+                  <option value="">市場を選択してください</option>
+                  <option value="tpx10">東証トップ10</option>
+                  <option value="nikkei225">日経225</option>
+                  <option value="jpx400">JPX400</option>
+                  <option value="manual">手入力</option>
+                </select>
+                <small class="form-text text-muted"
+                  >スクリーニング対象とする市場インデックス</small
+                >
+              </div>
+
+              <!-- 手入力シンボル一覧 -->
+              <div class="form-group" id="manualSymbolSection" style="display: none;">
+                <label class="form-label">
+                  <i class="fas fa-edit me-2"></i>シンボル一覧
+                </label>
+                <textarea
+                  class="form-control"
+                  id="manualSymbolList"
+                  name="symbol_list"
+                  rows="8"
+                  placeholder="シンボルを入力してください（例）:
+7203.T, 6758.T, 9984.T
+# これはコメント行です
+1234.T 5678.T
+9999.T
+
+# 複数の区切り文字が使えます:
+# コンマ、スペース、改行で区切ってください
+# 行頭に # がある行はコメントとして無視されます"
+                ></textarea>
+                <small class="form-text text-muted">
+                  シンボルはコンマ、スペース、改行で区切ってください。行頭に「#」がある行はコメントとして無視されます。
+                </small>
+              </div>
+
+              <!-- 判定日選択 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i class="fas fa-calendar-day me-2"></i>判定日
+                </label>
+                <input
+                  type="date"
+                  class="form-control"
+                  id="judgmentDate"
+                  name="judgment_date"
+                  value="{{ default_judgment_date }}"
+                  required
+                />
+                <small class="form-text text-muted"
+                  >スクリーニング条件を判定する基準日（日本時間0-9時は前日、土日は前金曜日がデフォルト）</small
+                >
+              </div>
+
+              <!-- スクリーニング実行ボタン -->
+              <div class="text-center mt-4">
+                <button type="submit" class="btn btn-success btn-lg">
+                  <i class="fas fa-filter me-2"></i>スクリーニング開始
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- アラートエリア -->
+          <div id="alertArea" class="mt-3"></div>
+
+          <!-- 旧インターフェースへのリンク -->
+          <div class="text-center mt-4">
+            <a href="/old" class="btn btn-outline-secondary">
+              <i class="fas fa-arrow-left me-2"></i>旧インターフェース
+            </a>
+          </div>
         </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // 新しいシンボル追加
-        document.getElementById('addSymbolBtn').addEventListener('click', async function() {
-            const symbol = document.getElementById('manualSymbol').value.trim().toUpperCase();
-            
-            if (!symbol) {
-                showAlert('シンボルを入力してください', 'warning');
-                return;
+      // 新しいシンボル追加
+      document
+        .getElementById("addSymbolBtn")
+        .addEventListener("click", async function () {
+          const symbol = document
+            .getElementById("manualSymbol")
+            .value.trim()
+            .toUpperCase();
+
+          if (!symbol) {
+            showAlert("シンボルを入力してください", "warning");
+            return;
+          }
+
+          // ローディング状態
+          this.innerHTML =
+            '<i class="fas fa-spinner fa-spin me-2"></i>追加中...';
+          this.disabled = true;
+
+          try {
+            const response = await fetch("/add_symbol", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ symbol: symbol }),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              // セレクトボックスに新しいオプションを追加
+              const select = document.getElementById("symbolSelect");
+              const option = document.createElement("option");
+              option.value = result.symbol;
+              option.textContent = `${result.symbol} (${result.company_name})`;
+              option.selected = true;
+              select.appendChild(option);
+
+              // 入力欄をクリア
+              document.getElementById("manualSymbol").value = "";
+
+              showAlert(
+                `${result.symbol} (${result.company_name}) を追加しました`,
+                "success"
+              );
+            } else {
+              showAlert(result.error || "エラーが発生しました", "danger");
             }
+          } catch (error) {
+            showAlert("ネットワークエラーが発生しました", "danger");
+          }
 
-            // ローディング状態
-            this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>追加中...';
-            this.disabled = true;
-
-            try {
-                const response = await fetch('/add_symbol', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({symbol: symbol})
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    // セレクトボックスに新しいオプションを追加
-                    const select = document.getElementById('symbolSelect');
-                    const option = document.createElement('option');
-                    option.value = result.symbol;
-                    option.textContent = `${result.symbol} (${result.company_name})`;
-                    option.selected = true;
-                    select.appendChild(option);
-
-                    // 入力欄をクリア
-                    document.getElementById('manualSymbol').value = '';
-                    
-                    showAlert(`${result.symbol} (${result.company_name}) を追加しました`, 'success');
-                } else {
-                    showAlert(result.error || 'エラーが発生しました', 'danger');
-                }
-            } catch (error) {
-                showAlert('ネットワークエラーが発生しました', 'danger');
-            }
-
-            // ボタンを元に戻す
-            this.innerHTML = '<i class="fas fa-plus me-2"></i>追加';
-            this.disabled = false;
+          // ボタンを元に戻す
+          this.innerHTML = '<i class="fas fa-plus me-2"></i>追加';
+          this.disabled = false;
         });
 
-        // フォーム送信処理
-        document.getElementById('backtestForm').addEventListener('submit', function(e) {
+      // フォーム送信処理
+      document
+        .getElementById("backtestForm")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const formData = new FormData(this);
+          const params = new URLSearchParams();
+
+          for (let [key, value] of formData.entries()) {
+            params.append(key, value);
+          }
+
+          // バックテストページにリダイレクト
+          window.open(`/backtest?${params.toString()}`, "_blank");
+        });
+
+      // 対象市場選択変更時の処理
+      document
+        .getElementById("targetMarket")
+        .addEventListener("change", function (e) {
+          const manualSection = document.getElementById("manualSymbolSection");
+          const manualTextarea = document.getElementById("manualSymbolList");
+          
+          if (e.target.value === "manual") {
+            manualSection.style.display = "block";
+            manualTextarea.required = true;
+          } else {
+            manualSection.style.display = "none";
+            manualTextarea.required = false;
+            manualTextarea.value = "";
+          }
+        });
+
+      // スクリーニングフォーム送信処理
+      document
+        .getElementById("screeningForm")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const formData = new FormData(this);
+          const params = new URLSearchParams();
+
+          for (let [key, value] of formData.entries()) {
+            params.append(key, value);
+          }
+
+          // スクリーニング結果ページにリダイレクト
+          window.open(`/screening?${params.toString()}`, "_blank");
+        });
+
+      // 手動入力でEnterキー押下時の処理
+      document
+        .getElementById("manualSymbol")
+        .addEventListener("keypress", function (e) {
+          if (e.key === "Enter") {
             e.preventDefault();
-            
-            const formData = new FormData(this);
-            const params = new URLSearchParams();
-            
-            for (let [key, value] of formData.entries()) {
-                params.append(key, value);
-            }
-            
-            // バックテストページにリダイレクト
-            window.open(`/backtest?${params.toString()}`, '_blank');
+            document.getElementById("addSymbolBtn").click();
+          }
         });
 
-        // スクリーニングフォーム送信処理
-        document.getElementById('screeningForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const params = new URLSearchParams();
-            
-            for (let [key, value] of formData.entries()) {
-                params.append(key, value);
-            }
-            
-            // スクリーニング結果ページにリダイレクト
-            window.open(`/screening?${params.toString()}`, '_blank');
-        });
-
-        // 手動入力でEnterキー押下時の処理
-        document.getElementById('manualSymbol').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('addSymbolBtn').click();
-            }
-        });
-
-        // アラート表示関数
-        function showAlert(message, type) {
-            const alertArea = document.getElementById('alertArea');
-            const alertHtml = `
+      // アラート表示関数
+      function showAlert(message, type) {
+        const alertArea = document.getElementById("alertArea");
+        const alertHtml = `
                 <div class="alert alert-${type} alert-dismissible fade show" role="alert">
                     ${message}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             `;
-            alertArea.innerHTML = alertHtml;
-            
-            // 5秒後に自動で消す
-            setTimeout(() => {
-                const alert = alertArea.querySelector('.alert');
-                if (alert) {
-                    alert.remove();
-                }
-            }, 5000);
-        }
+        alertArea.innerHTML = alertHtml;
 
-        // 日付の妥当性チェック
-        document.getElementById('startDate').addEventListener('change', validateDates);
-        document.getElementById('endDate').addEventListener('change', validateDates);
+        // 5秒後に自動で消す
+        setTimeout(() => {
+          const alert = alertArea.querySelector(".alert");
+          if (alert) {
+            alert.remove();
+          }
+        }, 5000);
+      }
 
-        function validateDates() {
-            const startDate = new Date(document.getElementById('startDate').value);
-            const endDate = new Date(document.getElementById('endDate').value);
-            
-            if (startDate >= endDate) {
-                showAlert('開始日は終了日より前を指定してください', 'warning');
-            }
+      // 日付の妥当性チェック
+      document
+        .getElementById("startDate")
+        .addEventListener("change", validateDates);
+      document
+        .getElementById("endDate")
+        .addEventListener("change", validateDates);
+
+      function validateDates() {
+        const startDate = new Date(document.getElementById("startDate").value);
+        const endDate = new Date(document.getElementById("endDate").value);
+
+        if (startDate >= endDate) {
+          showAlert("開始日は終了日より前を指定してください", "warning");
         }
+      }
     </script>
-</body>
+  </body>
 </html>

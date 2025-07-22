@@ -182,6 +182,7 @@ class StockDataManager:
         first_date, last_date = self.get_data_range(symbol)
         
         if first_date is None or last_date is None:
+            print(f'required_start/required_end: {required_start} / {required_end}')
             return True, required_start, required_end
         
         # 必要な範囲がデータベースの範囲内かチェック
@@ -190,38 +191,28 @@ class StockDataManager:
         first_date_dt = datetime.strptime(first_date, '%Y-%m-%d')
         last_date_dt = datetime.strptime(last_date, '%Y-%m-%d')
         
-        # 昨日までの最新データを取得（今日は取引中の可能性があるため）
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_str = yesterday.strftime('%Y-%m-%d')
-        
-        # 更新が必要な範囲を計算（要求終了日と昨日の早い方まで）
-        max_end_date = min(required_end, yesterday_str)
+        # 更新が必要な範囲を計算
         fetch_start = required_start
-        fetch_end = max_end_date
+        fetch_end = required_end
         
-        # 必要な開始日がDBの開始日より前の場合
+        # 取得不要
+        if first_date_dt <= required_start_dt and required_end_dt <= last_date_dt:
+            return False, None, None
+
+        # 取得範囲設定
         if required_start_dt < first_date_dt:
             fetch_start = required_start
-        # DBに必要な開始日以降のデータがある場合
-        elif required_start_dt >= first_date_dt:
-            fetch_start = None
-        
-        # 必要な終了日がDBの終了日より後の場合、または昨日より古い場合
-        max_end_date_dt = datetime.strptime(max_end_date, '%Y-%m-%d')
-        if required_end_dt > last_date_dt or last_date_dt < yesterday:
-            if fetch_start is None:
-                # 既存データの次の日から取得
-                next_day = last_date_dt + timedelta(days=1)
-                fetch_start = next_day.strftime('%Y-%m-%d')
-            fetch_end = max_end_date
-            
-            # 実際に取得する必要があるかチェック
-            if fetch_start and datetime.strptime(fetch_start, '%Y-%m-%d') > max_end_date_dt:
-                return False, None, None
         else:
-            if fetch_start is None:
-                return False, None, None
-        
+            fetch_start = required_end
+
+        if last_date_dt < required_end_dt:
+            fetch_end = required_end
+        else:
+            fetch_end = required_start
+
+        print(f'required_start/required_end: {required_start} / {required_end}')
+        print(f'first_date/last_date       : {first_date} / {last_date}')
+        print(f'fetch_start/fetch_end      : {fetch_start} / {fetch_end}')
         return True, fetch_start, fetch_end
     
     def get_company_name(self, symbol):
@@ -318,6 +309,156 @@ class StockDataManager:
         conn.close()
         
         return company_name
+    
+    def fix_metadata_dates(self, symbol=None):
+        """
+        メタデータテーブルのfirst_date/last_dateを実際のデータに基づいて修正
+        
+        Args:
+            symbol: 修正対象のシンボル（Noneの場合は全シンボル）
+        
+        Returns:
+            dict: 修正結果の統計情報
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # 対象シンボルを取得
+        if symbol:
+            cursor.execute('SELECT symbol, table_name FROM symbols_meta WHERE symbol = ?', (symbol,))
+            symbols_to_fix = cursor.fetchall()
+        else:
+            cursor.execute('SELECT symbol, table_name FROM symbols_meta')
+            symbols_to_fix = cursor.fetchall()
+        
+        fixed_count = 0
+        error_count = 0
+        results = []
+        
+        for sym, table_name in symbols_to_fix:
+            try:
+                # 実際のテーブルから最小・最大日付を取得
+                cursor.execute(f'SELECT MIN(date), MAX(date), COUNT(*) FROM {table_name}')
+                result = cursor.fetchone()
+                
+                if result and result[0] and result[1]:
+                    actual_first_date, actual_last_date, record_count = result
+                    
+                    # メタデータの現在の値を取得
+                    cursor.execute('SELECT first_date, last_date FROM symbols_meta WHERE symbol = ?', (sym,))
+                    meta_result = cursor.fetchone()
+                    old_first_date, old_last_date = meta_result if meta_result else (None, None)
+                    
+                    # メタデータを更新
+                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute('''
+                        UPDATE symbols_meta 
+                        SET first_date = ?, last_date = ?, last_updated = ?
+                        WHERE symbol = ?
+                    ''', (actual_first_date, actual_last_date, current_time, sym))
+                    
+                    # 結果を記録
+                    result_info = {
+                        'symbol': sym,
+                        'old_first_date': old_first_date,
+                        'old_last_date': old_last_date,
+                        'new_first_date': actual_first_date,
+                        'new_last_date': actual_last_date,
+                        'record_count': record_count,
+                        'changed': (old_first_date != actual_first_date or old_last_date != actual_last_date)
+                    }
+                    results.append(result_info)
+                    
+                    if result_info['changed']:
+                        fixed_count += 1
+                        print(f"  {sym}: 修正 {old_first_date}～{old_last_date} → {actual_first_date}～{actual_last_date} ({record_count}件)")
+                    else:
+                        print(f"  {sym}: 変更なし {actual_first_date}～{actual_last_date} ({record_count}件)")
+                else:
+                    print(f"  {sym}: データなし（テーブル: {table_name}）")
+                    error_count += 1
+                    
+            except Exception as e:
+                print(f"  {sym}: エラー - {e}")
+                error_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            'total_symbols': len(symbols_to_fix),
+            'fixed_count': fixed_count,
+            'error_count': error_count,
+            'unchanged_count': len(symbols_to_fix) - fixed_count - error_count,
+            'results': results
+        }
+    
+    def validate_all_metadata(self):
+        """
+        全シンボルのメタデータと実データの整合性をチェック
+        
+        Returns:
+            dict: チェック結果の詳細
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT symbol, table_name, first_date, last_date FROM symbols_meta')
+        all_symbols = cursor.fetchall()
+        
+        inconsistent_symbols = []
+        missing_tables = []
+        consistent_symbols = []
+        
+        for symbol, table_name, meta_first, meta_last in all_symbols:
+            try:
+                # テーブルの存在確認
+                cursor.execute(f'SELECT MIN(date), MAX(date), COUNT(*) FROM {table_name}')
+                result = cursor.fetchone()
+                
+                if result and result[0] and result[1]:
+                    actual_first, actual_last, count = result
+                    
+                    if meta_first != actual_first or meta_last != actual_last:
+                        inconsistent_symbols.append({
+                            'symbol': symbol,
+                            'meta_first': meta_first,
+                            'meta_last': meta_last,
+                            'actual_first': actual_first,
+                            'actual_last': actual_last,
+                            'record_count': count
+                        })
+                    else:
+                        consistent_symbols.append({
+                            'symbol': symbol,
+                            'first_date': actual_first,
+                            'last_date': actual_last,
+                            'record_count': count
+                        })
+                else:
+                    missing_tables.append({
+                        'symbol': symbol,
+                        'table_name': table_name
+                    })
+                    
+            except Exception as e:
+                missing_tables.append({
+                    'symbol': symbol,
+                    'table_name': table_name,
+                    'error': str(e)
+                })
+        
+        conn.close()
+        
+        return {
+            'total_symbols': len(all_symbols),
+            'consistent_count': len(consistent_symbols),
+            'inconsistent_count': len(inconsistent_symbols),
+            'missing_table_count': len(missing_tables),
+            'consistent_symbols': consistent_symbols,
+            'inconsistent_symbols': inconsistent_symbols,
+            'missing_tables': missing_tables
+        }
 
 
 def get_japanese_stock_data(symbol, start_date, end_date, db_manager=None):
@@ -325,18 +466,12 @@ def get_japanese_stock_data(symbol, start_date, end_date, db_manager=None):
     if db_manager is None:
         db_manager = StockDataManager()
     
-    print(f"  {symbol}のデータを取得中...")
-    
-    # 1990-01-01から要求された終了日までの完全なデータを確保
-    full_start = "1990-01-01"
-    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-    
-    # end_dateが昨日より未来の場合は昨日までに制限
-    actual_end_date = min(end_date, yesterday) if end_date <= yesterday else yesterday
+    print(f"  {symbol}({start_date} - {end_date})のデータを取得中...")
     
     try:
         # データベースの更新が必要かチェック（要求された範囲のみ）
-        needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, start_date, actual_end_date)
+        needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, start_date, end_date)
+        print(f"  needs_update: {needs_update}({fetch_start} - {fetch_end})")
         
         # 新しいデータが必要な場合、yfinanceから取得
         if needs_update and fetch_start and fetch_end:

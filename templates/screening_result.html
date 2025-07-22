@@ -113,8 +113,8 @@
                     {% for symbol_result in results.passed_symbols %}
                     <div class="accordion-item symbol-card passed-symbol">
                         <h2 class="accordion-header" id="passed{{ loop.index }}">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                    data-bs-target="#passedCollapse{{ loop.index }}" aria-expanded="false">
+                            <button class="accordion-button" type="button" data-bs-toggle="collapse" 
+                                    data-bs-target="#passedCollapse{{ loop.index }}" aria-expanded="true">
                                 <div class="d-flex justify-content-between align-items-center w-100 me-3">
                                     <div>
                                         <strong>{{ symbol_result.symbol }}</strong>
@@ -128,8 +128,7 @@
                                 </div>
                             </button>
                         </h2>
-                        <div id="passedCollapse{{ loop.index }}" class="accordion-collapse collapse" 
-                             data-bs-parent="#passedAccordion">
+                        <div id="passedCollapse{{ loop.index }}" class="accordion-collapse collapse show">
                             <div class="accordion-body">
                                 <div class="row">
                                     <div class="col-md-6">
@@ -161,10 +160,37 @@
                                         </ul>
                                     </div>
                                 </div>
+                                
+                                <!-- 株価チャート -->
+                                {% if chart_data and chart_data.get(symbol_result.symbol) %}
+                                <div class="mt-4">
+                                    <h6><i class="fas fa-chart-candlestick me-2"></i>株価チャート (60日間)</h6>
+                                    <div class="text-center">
+                                        <img src="data:image/png;base64,{{ chart_data[symbol_result.symbol] }}" 
+                                             class="img-fluid" 
+                                             alt="{{ symbol_result.symbol }} チャート"
+                                             style="max-width: 100%; height: auto; border: 1px solid #dee2e6; border-radius: 4px;">
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            日足ローソク足: <span style="color: green;">緑=陽線</span>, <span style="color: crimson;">朱=陰線</span> | 
+                                            <span style="color: blue;">■</span> 5日SMA | 
+                                            <span style="color: cyan;">■</span> 20日SMA | 
+                                            <span style="color: orange;">■</span> 60日SMA
+                                        </small>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                
                                 <div class="mt-3">
                                     <a href="/backtest?symbol={{ symbol_result.symbol }}&start_date=2020-01-01&end_date=2024-12-31&timeframe=D&strategy=CycleMacd" 
                                        class="btn btn-primary btn-sm" target="_blank">
                                         <i class="fas fa-chart-area me-2"></i>バックテスト実行
+                                    </a>
+                                    <a href="https://minkabu.jp/stock/{{ symbol_result.symbol.replace('.T', '') }}" 
+                                       class="btn btn-outline-info btn-sm ms-2" target="_blank">
+                                        <i class="fas fa-external-link-alt me-2"></i>みんかぶで詳細を見る
                                     </a>
                                 </div>
                             </div>

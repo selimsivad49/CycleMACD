@@ -22,6 +22,16 @@ python3 simple_test.py         # Basic functionality validation using standard l
 python3 test_cyclemacd.py      # Comprehensive unit tests with dummy data generation
 ```
 
+### Database Management
+```bash
+# Database metadata maintenance  
+python3 fix_metadata.py         # Fix inconsistencies between metadata and actual data
+python3 fix_metadata.py --auto  # Auto-fix without confirmation
+
+# Manual database validation
+python3 -c "from data_manager import StockDataManager; dm = StockDataManager(); print(dm.validate_all_metadata())"
+```
+
 ### Dependencies
 ```bash
 pip install -r requirements.txt
@@ -46,8 +56,9 @@ Core dependencies: Flask 3.0+, yfinance 0.2+, pandas 2.0+, matplotlib 3.5+, japa
 - **Long/Short Analytics**: Separate performance tracking by trade direction
 
 **screening.py** - Advanced stock screening system:
-- **HalfSignal**: SMA-based screening with complex candlestick analysis
-- **ScreeningEngine**: Batch processing across market indices (Nikkei 225, JPX400)
+- **HalfSignal**: SMA-based screening with complex candlestick analysis and chart generation
+- **ScreeningEngine**: Batch processing across market indices (Nikkei 225, JPX400, Manual Input)
+- **Visual Charts**: 60-day candlestick charts with SMA overlays and judgment day indicators
 - **Judgment Date Logic**: Japanese trading hours and calendar-aware validation
 
 **utils.py** - Utility functions and Japanese market support:
@@ -139,11 +150,14 @@ Core dependencies: Flask 3.0+, yfinance 0.2+, pandas 2.0+, matplotlib 3.5+, japa
 3. **Candlestick Analysis**: Real body crossing 5SMA by ≥50% with body intersection validation
 
 **Screening Workflow**:
-1. Market index symbol retrieval (Nikkei 225/JPX400)
+1. Market index symbol retrieval (Nikkei 225/JPX400/Manual Input with parsing)
 2. Judgment date validation with Japanese trading calendar
 3. Batch condition checking across all symbols
-4. Results categorization (passed/failed/error) with detailed analytics
-5. Interactive results display with direct backtest integration
+4. Chart generation for passed symbols (60-day candlesticks + SMA + judgment day markers)
+5. Results categorization (passed/failed/error) with visual analytics
+6. Interactive accordion display with direct backtest and minkabu.jp integration
+
+**Manual Symbol Input**: Supports comma/space/newline separated symbols with comment support (#)
 
 ### Database Schema
 

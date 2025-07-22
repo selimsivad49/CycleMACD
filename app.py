@@ -26,7 +26,7 @@ import japanize_matplotlib
 from strategies import MACDBacktester, analyze_multiple_stocks
 from utils import create_default_japanese_symbols, get_default_judgment_date
 from data_manager import StockDataManager
-from screening import ScreeningEngine, get_available_markets, get_market_symbols
+from screening import ScreeningEngine, get_available_markets, get_market_symbols, parse_manual_symbol_list
 
 app = Flask(__name__)
 
@@ -355,11 +355,26 @@ def run_screening():
                                  params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
         # 市場シンボルを取得
-        symbol_list = get_market_symbols(market)
-        if not symbol_list:
-            return render_template('screening_result.html', 
-                                 error=f"市場 '{market}' のシンボルリストが見つかりません。", 
-                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+        if market == 'manual':
+            # 手入力の場合
+            symbol_list_text = request.args.get('symbol_list', '')
+            if not symbol_list_text:
+                return render_template('screening_result.html', 
+                                     error="手入力を選択した場合、シンボル一覧を入力してください。", 
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+            
+            symbol_list = parse_manual_symbol_list(symbol_list_text)
+            if not symbol_list:
+                return render_template('screening_result.html', 
+                                     error="有効なシンボルが見つかりませんでした。シンボル一覧を確認してください。", 
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'symbol_list': symbol_list_text})
+        else:
+            # 定義済み市場の場合
+            symbol_list = get_market_symbols(market)
+            if not symbol_list:
+                return render_template('screening_result.html', 
+                                     error=f"市場 '{market}' のシンボルリストが見つかりません。", 
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
         # スクリーニング実行
         screening_engine = ScreeningEngine()
@@ -370,12 +385,30 @@ def run_screening():
                                  error=results['error'], 
                                  params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
+        # 通過銘柄のチャートを生成
+        chart_data = {}
+        if results.get('passed_symbols'):
+            halfsignal = screening_engine.conditions.get('halfsignal')
+            for symbol_result in results['passed_symbols']:
+                symbol = symbol_result['symbol']
+                print(f"  {symbol}: チャート生成中...")
+                chart_base64 = halfsignal.generate_chart(symbol, judgment_date=judgment_date)
+                if chart_base64:
+                    chart_data[symbol] = chart_base64
+                    print(f"  {symbol}: チャート生成完了")
+                else:
+                    print(f"  {symbol}: チャート生成失敗")
+        
         # 市場名を取得
         available_markets = get_available_markets()
-        market_name = available_markets.get(market, market)
+        if market == 'manual':
+            market_name = f"手入力 ({len(symbol_list)}銘柄)"
+        else:
+            market_name = available_markets.get(market, market)
         
         return render_template('screening_result.html', 
                              results=results,
+                             chart_data=chart_data,
                              market_name=market_name,
                              params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
         
