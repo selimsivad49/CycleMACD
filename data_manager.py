@@ -129,14 +129,26 @@ class StockDataManager:
         data_to_save.to_sql(table_name, conn, if_exists='append', index=False)
         
         # メタデータ更新
-        first_date = data_to_save['date'].min()
-        last_date = data_to_save['date'].max()
+        new_first_date = data_to_save['date'].min()
+        new_last_date = data_to_save['date'].max()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # 会社名を取得（既存の場合は保持）
-        cursor.execute('SELECT company_name FROM symbols_meta WHERE symbol = ?', (symbol,))
-        existing_name = cursor.fetchone()
-        company_name = existing_name[0] if existing_name else None
+        # 既存のメタデータを取得（会社名とfirst_date, last_dateを保持）
+        cursor.execute('SELECT company_name, first_date, last_date FROM symbols_meta WHERE symbol = ?', (symbol,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            company_name, existing_first_date, existing_last_date = existing
+            
+            # first_dateは既存の方が古い場合は保持、新しいデータの方が古い場合は更新
+            first_date = min(existing_first_date, new_first_date) if existing_first_date else new_first_date
+            
+            # last_dateは既存の方が新しい場合は保持、新しいデータの方が新しい場合は更新
+            last_date = max(existing_last_date, new_last_date) if existing_last_date else new_last_date
+        else:
+            company_name = None
+            first_date = new_first_date
+            last_date = new_last_date
         
         cursor.execute('''
             INSERT OR REPLACE INTO symbols_meta (symbol, table_name, company_name, first_date, last_date, last_updated)
@@ -190,7 +202,7 @@ class StockDataManager:
         required_end_dt = datetime.strptime(required_end, '%Y-%m-%d')
         first_date_dt = datetime.strptime(first_date, '%Y-%m-%d')
         last_date_dt = datetime.strptime(last_date, '%Y-%m-%d')
-        
+
         # 更新が必要な範囲を計算
         fetch_start = required_start
         fetch_end = required_end
@@ -471,12 +483,14 @@ def get_japanese_stock_data(symbol, start_date, end_date, db_manager=None):
     try:
         # データベースの更新が必要かチェック（要求された範囲のみ）
         needs_update, fetch_start, fetch_end = db_manager.needs_update(symbol, start_date, end_date)
-        print(f"  needs_update: {needs_update}({fetch_start} - {fetch_end})")
+        # print(f"  needs_update: {needs_update}({fetch_start} - {fetch_end})")
         
         # 新しいデータが必要な場合、yfinanceから取得
         if needs_update and fetch_start and fetch_end:
+            # yfinanceから取得する場合endは翌日にする必要がある
+            fetch_end = (datetime.strptime(fetch_end, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
             print(f"  {symbol}: yfinanceから取得中 ({fetch_start} - {fetch_end})")
-            
+
             # 日本株のティッカー形式を試す
             ticker_formats = [symbol]
             

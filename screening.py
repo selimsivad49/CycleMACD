@@ -29,7 +29,7 @@ class HalfSignal:
     
     def __init__(self):
         self.name = "半分シグナル"
-        self.description = "5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け"
+        self.description = "5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け、直近4日間で5日SMAタッチ"
     
     def check_condition(self, symbol, judgment_date=None, period_days=100):
         """
@@ -114,9 +114,18 @@ class HalfSignal:
             condition3b = alt_body_length > 0 and alt_cross_length >= alt_body_length / 2 and latest['SMA5'] > alt_body_bottom
             
             condition3 = condition3a or condition3b
-            
+
+            # 条件4: 直近4日間で5日SMAにタッチしていること（安値が5日SMA以下）
+            condition4 = False
+            # 最低4日分のデータがあることを確認してから条件をチェック
+            if len(data) >= 4:
+                for i in range(-4, 0):  # 直近4日間をチェック
+                    if not pd.isna(data.iloc[i]['SMA5']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA5']:
+                        condition4 = True
+                        break
+
             # 全条件の結果
-            passed = condition1 and condition2 and condition3
+            passed = condition1 and condition2 and condition3 and condition4
             
             details = {
                 'latest_date': latest.name.strftime('%Y-%m-%d'),
@@ -127,6 +136,7 @@ class HalfSignal:
                 'condition1_sma_order': condition1,
                 'condition2_sma5_rising': condition2,
                 'condition3_half_cross': condition3,
+                'condition4_touch_5SMA': condition4,
                 'body_length': float(body_length),
                 'cross_length': float(cross_length),
                 'cross_ratio': float(cross_length / body_length) if body_length > 0 else 0,
@@ -460,13 +470,13 @@ MARKET_INDICES = {
     },
     'jpx400': {
         'name': 'JPX400',
-        'description': 'JPX日経インデックス400採用銘柄',
+        'description': 'JPX日経インデックス400採用銘柄(日経225除く)',
         'symbols': [
-            # JPX400の主要銘柄（日経225 + 追加銘柄の例）
+            # 主要な日経225銘柄（例）
             '1301.T', '1332.T', '1333.T', '1605.T', '1721.T', '1801.T', '1802.T', '1803.T', '1808.T', '1812.T',
             '1925.T', '1928.T', '1963.T', '2002.T', '2269.T', '2282.T', '2413.T', '2432.T', '2501.T', '2502.T',
             '2503.T', '2531.T', '2768.T', '2801.T', '2802.T', '2871.T', '2914.T', '3086.T', '3099.T', '3101.T',
-            '3103.T', '3105.T', '3382.T', '3401.T', '3402.T', '3405.T', '3407.T', '3436.T', '3861.T',
+            '3103.T', '3105.T', '3382.T', '3401.T', '3402.T', '3405.T', '3407.T', '3436.T', '3861.T', '3863.T',
             '4004.T', '4005.T', '4021.T', '4042.T', '4043.T', '4061.T', '4063.T', '4088.T', '4151.T', '4183.T',
             '4188.T', '4204.T', '4208.T', '4272.T', '4307.T', '4324.T', '4452.T', '4502.T', '4503.T', '4506.T',
             '4507.T', '4519.T', '4523.T', '4568.T', '4578.T', '4612.T', '4631.T', '4661.T', '4681.T', '4684.T',
@@ -487,7 +497,7 @@ MARKET_INDICES = {
             '9001.T', '9005.T', '9007.T', '9008.T', '9009.T', '9020.T', '9021.T', '9022.T', '9031.T', '9041.T',
             '9042.T', '9064.T', '9101.T', '9104.T', '9107.T', '9201.T', '9202.T', '9301.T',
             '9432.T', '9433.T', '9434.T', '9435.T', '9501.T', '9502.T', '9503.T', '9531.T', '9532.T',
-            '9613.T', '9678.T', '9684.T', '9735.T', '9766.T', '9983.T', '9984.T',
+            '9613.T', '9678.T', '9684.T', '9735.T', '9766.T', '9983.T', '9984.T'
             # JPX400追加銘柄（例）
             '1379.T', '1414.T', '1419.T', '1662.T', '1878.T', '2432.T', '2433.T', '2811.T', '3038.T',
             '3659.T', '3765.T', '4324.T', '4385.T', '4543.T', '4751.T', '4768.T', '6055.T', '6088.T',
