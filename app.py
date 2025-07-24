@@ -329,30 +329,35 @@ def run_screening():
         condition = request.args.get('condition')
         market = request.args.get('market')
         judgment_date = request.args.get('judgment_date')
+        timeframe = request.args.get('timeframe', '1d')  # 仮想通貨用時間足（デフォルト: 1d）
         
         # パラメータ検証
         if not condition:
             return render_template('screening_result.html', 
                                  error="スクリーニング条件が指定されていません。", 
-                                 params={'condition': '', 'market': market, 'judgment_date': judgment_date})
+                                 params={'condition': '', 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
         
         if not market:
             return render_template('screening_result.html', 
                                  error="対象市場が指定されていません。", 
-                                 params={'condition': condition, 'market': '', 'judgment_date': judgment_date})
+                                 params={'condition': condition, 'market': '', 'judgment_date': judgment_date, 'timeframe': timeframe})
         
         if not judgment_date:
             return render_template('screening_result.html', 
                                  error="判定日が指定されていません。", 
-                                 params={'condition': condition, 'market': market, 'judgment_date': ''})
+                                 params={'condition': condition, 'market': market, 'judgment_date': '', 'timeframe': timeframe})
         
-        # 判定日の妥当性チェック
-        from utils import validate_judgment_date
-        is_valid, error_msg = validate_judgment_date(judgment_date)
-        if not is_valid:
-            return render_template('screening_result.html', 
-                                 error=f"判定日エラー: {error_msg}", 
-                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+        # 仮想通貨かどうかを判定
+        is_crypto = condition == 'crypto_halfsignal' or (market and market.startswith('crypto_'))
+        
+        # 判定日の妥当性チェック（仮想通貨の場合はスキップ - 24時間取引のため）
+        if not is_crypto:
+            from utils import validate_judgment_date
+            is_valid, error_msg = validate_judgment_date(judgment_date)
+            if not is_valid:
+                return render_template('screening_result.html', 
+                                     error=f"判定日エラー: {error_msg}", 
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
         
         # 市場シンボルを取得
         if market == 'manual':
@@ -361,43 +366,60 @@ def run_screening():
             if not symbol_list_text:
                 return render_template('screening_result.html', 
                                      error="手入力を選択した場合、シンボル一覧を入力してください。", 
-                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
             
             symbol_list = parse_manual_symbol_list(symbol_list_text)
             if not symbol_list:
                 return render_template('screening_result.html', 
                                      error="有効なシンボルが見つかりませんでした。シンボル一覧を確認してください。", 
-                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'symbol_list': symbol_list_text})
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe, 'symbol_list': symbol_list_text})
         else:
             # 定義済み市場の場合
             symbol_list = get_market_symbols(market)
             if not symbol_list:
                 return render_template('screening_result.html', 
                                      error=f"市場 '{market}' のシンボルリストが見つかりません。", 
-                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+                                     params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
         
         # スクリーニング実行
         screening_engine = ScreeningEngine()
-        results = screening_engine.run_screening(condition, symbol_list, judgment_date=judgment_date)
+        if is_crypto:
+            results = screening_engine.run_screening(condition, symbol_list, judgment_date=judgment_date, timeframe=timeframe)
+        else:
+            results = screening_engine.run_screening(condition, symbol_list, judgment_date=judgment_date)
         
         if 'error' in results:
             return render_template('screening_result.html', 
                                  error=results['error'], 
-                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+                                 params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
         
         # 通過銘柄のチャートを生成
         chart_data = {}
         if results.get('passed_symbols'):
-            halfsignal = screening_engine.conditions.get('halfsignal')
-            for symbol_result in results['passed_symbols']:
-                symbol = symbol_result['symbol']
-                print(f"  {symbol}: チャート生成中...")
-                chart_base64 = halfsignal.generate_chart(symbol, judgment_date=judgment_date)
-                if chart_base64:
-                    chart_data[symbol] = chart_base64
-                    print(f"  {symbol}: チャート生成完了")
-                else:
-                    print(f"  {symbol}: チャート生成失敗")
+            if is_crypto:
+                # 仮想通貨の場合
+                crypto_halfsignal = screening_engine.conditions.get('crypto_halfsignal')
+                for symbol_result in results['passed_symbols']:
+                    symbol = symbol_result['symbol']
+                    print(f"  {symbol}: チャート生成中...")
+                    chart_base64 = crypto_halfsignal.generate_chart(symbol, judgment_date=judgment_date, timeframe=timeframe)
+                    if chart_base64:
+                        chart_data[symbol] = chart_base64
+                        print(f"  {symbol}: チャート生成完了")
+                    else:
+                        print(f"  {symbol}: チャート生成失敗")
+            else:
+                # 株式の場合
+                halfsignal = screening_engine.conditions.get('halfsignal')
+                for symbol_result in results['passed_symbols']:
+                    symbol = symbol_result['symbol']
+                    print(f"  {symbol}: チャート生成中...")
+                    chart_base64 = halfsignal.generate_chart(symbol, judgment_date=judgment_date)
+                    if chart_base64:
+                        chart_data[symbol] = chart_base64
+                        print(f"  {symbol}: チャート生成完了")
+                    else:
+                        print(f"  {symbol}: チャート生成失敗")
         
         # 市場名を取得
         available_markets = get_available_markets()
@@ -410,12 +432,13 @@ def run_screening():
                              results=results,
                              chart_data=chart_data,
                              market_name=market_name,
-                             params={'condition': condition, 'market': market, 'judgment_date': judgment_date})
+                             is_crypto=is_crypto,
+                             params={'condition': condition, 'market': market, 'judgment_date': judgment_date, 'timeframe': timeframe})
         
     except Exception as e:
         return render_template('screening_result.html', 
                              error=f'スクリーニング実行中にエラーが発生しました: {str(e)}', 
-                             params={'condition': condition or '', 'market': market or '', 'judgment_date': judgment_date or ''})
+                             params={'condition': condition or '', 'market': market or '', 'judgment_date': judgment_date or '', 'timeframe': timeframe or '1d'})
 
 @app.route('/health')
 def health_check():

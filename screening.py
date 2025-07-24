@@ -22,6 +22,7 @@ from io import BytesIO
 import japanize_matplotlib
 
 from data_manager import get_japanese_stock_data
+from crypto_data_manager import get_crypto_data, TOP_CRYPTO_SYMBOLS
 
 
 class HalfSignal:
@@ -345,12 +346,335 @@ class HalfSignal:
             return None
 
 
+class CryptoHalfSignal:
+    """仮想通貨版半分シグナル - USDT建て暗号資産のSMAクロス条件に基づくスクリーニング"""
+    
+    def __init__(self):
+        self.name = "暗号資産半分シグナル"
+        self.description = "5日SMA > 20日SMA > 60日SMA、5日SMA上昇、ローソク足実体の半分以上が5日SMAを上抜け、直近4日間で5日SMAタッチ（USDT建て）"
+    
+    def check_condition(self, symbol, judgment_date=None, timeframe='1d', period_days=100):
+        """
+        仮想通貨スクリーニング条件をチェック
+        
+        Args:
+            symbol: チェック対象シンボル (例: 'BTCUSDT')
+            judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
+            timeframe: 時間足 ('1d', '4h', '1h', '15m')
+            period_days: データ取得期間（日数）
+        
+        Returns:
+            dict: {
+                'symbol': シンボル,
+                'passed': True/False,
+                'details': 詳細情報,
+                'error': エラーメッセージ（エラー時のみ）
+            }
+        """
+        try:
+            # 判定日の設定
+            if judgment_date:
+                end_date = judgment_date
+                end_dt = datetime.strptime(judgment_date, '%Y-%m-%d')
+            else:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                end_dt = datetime.now()
+            
+            # データ取得開始日（仮想通貨は24時間取引のため調整）
+            start_date = (end_dt - timedelta(days=period_days)).strftime('%Y-%m-%d')
+            
+            data = get_crypto_data(symbol, timeframe, start_date, end_date)
+            
+            if data is None or len(data) < 70:  # 最低70期間分のデータが必要
+                return {
+                    'symbol': symbol,
+                    'passed': False,
+                    'error': f'データが不十分です (取得件数: {len(data) if data is not None else 0}件)'
+                }
+            
+            # SMA計算
+            data['SMA5'] = data['Close'].rolling(window=5).mean()
+            data['SMA20'] = data['Close'].rolling(window=20).mean()
+            data['SMA60'] = data['Close'].rolling(window=60).mean()
+            
+            # 最新のデータ（最後の2期間分）
+            latest = data.iloc[-1]
+            prev = data.iloc[-2]
+            
+            # 条件1: 5日SMA > 20日SMA > 60日SMA
+            condition1 = (latest['SMA5'] > latest['SMA20'] > latest['SMA60'])
+            
+            # 条件2: 最新5日SMAが前期間より上昇
+            condition2 = (latest['SMA5'] > prev['SMA5'])
+            
+            # 条件3: ローソク足実体の半分以上が5日SMAを上抜け
+            # 実体の上端（高い方の価格）
+            body_top = max(latest['Open'], latest['Close'])
+            # 実体の下端（低い方の価格）
+            body_bottom = min(latest['Open'], latest['Close'])
+            
+            # 5日SMAより上にある実体部分の長さ
+            if body_top > latest['SMA5']:
+                cross_length = body_top - max(latest['SMA5'], body_bottom)
+            else:
+                cross_length = 0
+            
+            # 実体全体の長さ
+            body_length = latest['Close'] - latest['Open']
+            
+            # 半分以上の条件
+            condition3a = body_length > 0 and cross_length >= body_length / 2 and latest['SMA5'] > body_bottom
+            
+            # 代替条件: 実体下部を前期間終値に置き換えた場合
+            alt_body_bottom = prev['Close']
+            alt_body_length = body_top - alt_body_bottom
+
+            if body_top > latest['SMA5']:
+                alt_cross_length = body_top - max(latest['SMA5'], alt_body_bottom)
+            else:
+                alt_cross_length = 0
+            
+            condition3b = alt_body_length > 0 and alt_cross_length >= alt_body_length / 2 and latest['SMA5'] > alt_body_bottom
+            
+            condition3 = condition3a or condition3b
+            
+            # 条件4: 直近4期間で5日SMAにタッチしていること（安値が5日SMA以下）
+            condition4 = False
+            # 最低4期間分のデータがあることを確認してから条件をチェック
+            if len(data) >= 4:
+                for i in range(-4, 0):  # 直近4期間をチェック
+                    if not pd.isna(data.iloc[i]['SMA5']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA5']:
+                        condition4 = True
+                        break
+
+            # 全条件の結果
+            passed = condition1 and condition2 and condition3 and condition4
+            
+            details = {
+                'latest_date': latest.name.strftime('%Y-%m-%d %H:%M:%S'),
+                'close_price': float(latest['Close']),
+                'sma5': float(latest['SMA5']),
+                'sma20': float(latest['SMA20']),
+                'sma60': float(latest['SMA60']),
+                'condition1_sma_order': condition1,
+                'condition2_sma5_rising': condition2,
+                'condition3_half_cross': condition3,
+                'condition4_touch_5SMA': condition4,
+                'body_length': float(body_length),
+                'cross_length': float(cross_length),
+                'cross_ratio': float(cross_length / body_length) if body_length > 0 else 0,
+                'alternative_used': condition3b and not condition3a,
+                'timeframe': timeframe
+            }
+            
+            return {
+                'symbol': symbol,
+                'passed': passed,
+                'details': details
+            }
+            
+        except Exception as e:
+            return {
+                'symbol': symbol,
+                'passed': False,
+                'error': f'スクリーニングエラー: {str(e)}'
+            }
+    
+    def generate_chart(self, symbol, judgment_date=None, timeframe='1d', period_days=60):
+        """
+        仮想通貨HalfSignal用のチャートを生成
+        
+        Args:
+            symbol: 銘柄シンボル (例: 'BTCUSDT')
+            judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
+            timeframe: 時間足 ('1d', '4h', '1h', '15m')
+            period_days: 表示期間（日数、デフォルト60日）
+        
+        Returns:
+            str: Base64エンコードされたチャート画像、またはNone（エラー時）
+        """
+        try:
+            # 判定日の設定
+            if judgment_date:
+                end_date = judgment_date
+                end_dt = datetime.strptime(judgment_date, '%Y-%m-%d')
+            else:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                end_dt = datetime.now()
+            
+            # チャート表示範囲を計算：判定日から7日後、または本日まで
+            today = datetime.now().strftime('%Y-%m-%d')
+            chart_end_date = min(
+                (end_dt + timedelta(days=7)).strftime('%Y-%m-%d'),
+                today
+            )
+            
+            # データ取得開始日（チャート期間 + SMA計算用の余裕を加える）
+            chart_period = period_days + 60  # 60期間のSMA計算のため60期間の余裕
+            start_date = (end_dt - timedelta(days=chart_period)).strftime('%Y-%m-%d')
+
+            # 判定日以降のデータも取得するため、chart_end_dateまでデータを取得
+            data = get_crypto_data(symbol, timeframe, start_date, chart_end_date)
+            
+            if data is None or len(data) < 70:  # 最低70期間分は必要（60SMA計算のため）
+                return None
+            
+            # SMA計算（十分なデータ期間で計算）
+            data['SMA5'] = data['Close'].rolling(window=5).mean()
+            data['SMA20'] = data['Close'].rolling(window=20).mean()
+            data['SMA60'] = data['Close'].rolling(window=60).mean()
+            data['SMA100'] = data['Close'].rolling(window=100).mean()
+            
+            # チャートデータの取得：判定日の前からperiod_days期間分を基本とし、判定日+7日まで拡張
+            chart_start_dt = end_dt - timedelta(days=period_days - 1)
+            
+            # データをフィルタリング
+            chart_data = data[
+                (data.index >= chart_start_dt.strftime('%Y-%m-%d')) & 
+                (data.index <= chart_end_date)
+            ].copy()
+            
+            # データが不足している場合は、利用可能な全データを使用
+            if len(chart_data) < 60:
+                extended_start_dt = end_dt - timedelta(days=100)
+                chart_data = data[
+                    (data.index >= extended_start_dt.strftime('%Y-%m-%d')) & 
+                    (data.index <= chart_end_date)
+                ].copy()
+            
+            if len(chart_data) < 30:  # 最低30期間分は必要
+                return None
+            
+            # 判定日のインデックスを特定
+            judgment_index = None
+            if judgment_date:
+                try:
+                    judgment_dt = pd.Timestamp(judgment_date)
+                    for i, date in enumerate(chart_data.index):
+                        if date.date() >= judgment_dt.date():
+                            judgment_index = i
+                            break
+                except (ValueError, AttributeError):
+                    pass
+            
+            # チャート生成
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), 
+                                          gridspec_kw={'height_ratios': [3, 1]})
+            
+            # 1. 価格チャート（ローソク足）
+            dates = chart_data.index
+            opens = chart_data['Open']
+            highs = chart_data['High']
+            lows = chart_data['Low']
+            closes = chart_data['Close']
+            
+            # ローソク足の描画
+            for i, (date, open_price, high_price, low_price, close_price) in enumerate(
+                zip(dates, opens, highs, lows, closes)):
+                
+                # ローソク足の色決定（陽線=緑、陰線=朱色）
+                color = 'green' if close_price >= open_price else 'crimson'
+                
+                # 高値・安値の線（ひげ）
+                ax1.plot([i, i], [low_price, min(open_price, close_price)], color=color, linewidth=1)
+                ax1.plot([i, i], [max(open_price, close_price), high_price], color=color, linewidth=1)
+                
+                # 実体部分
+                body_height = abs(close_price - open_price)
+                body_bottom = min(open_price, close_price)
+                
+                rect = Rectangle((i-0.3, body_bottom), 0.6, body_height, 
+                               facecolor=color, alpha=0.7, edgecolor=color)
+                ax1.add_patch(rect)
+            
+            # SMAラインの描画
+            ax1.plot(range(len(chart_data)), chart_data['SMA5'], 
+                    color='blue', linewidth=1, label='5期間SMA', alpha=0.8)
+            ax1.plot(range(len(chart_data)), chart_data['SMA20'], 
+                    color='cyan', linewidth=1, label='20期間SMA', alpha=0.8)
+            ax1.plot(range(len(chart_data)), chart_data['SMA60'], 
+                    color='orange', linewidth=1, label='60期間SMA', alpha=0.8)
+            ax1.plot(range(len(chart_data)), chart_data['SMA100'], 
+                    color='yellow', linewidth=1, label='100期間SMA', alpha=0.8)
+            
+            # 判定日に青色の上向き矢印を追加
+            if judgment_index is not None:
+                judgment_price = chart_data.iloc[judgment_index]['Low']
+                ax1.annotate('', xy=(judgment_index, judgment_price * 0.99), 
+                           xytext=(judgment_index, judgment_price * 0.98),
+                           arrowprops=dict(arrowstyle='->', color='blue', lw=4),
+                           annotation_clip=False)
+            
+            # 軸の設定
+            ax1.set_xlim(-1, len(chart_data))
+            ax1.set_ylabel('価格 (USDT)', fontsize=12)
+            ax1.set_title(f'{symbol} - 暗号資産HalfSignal分析チャート ({timeframe}, 判定日: {judgment_date})', fontsize=14, fontweight='bold')
+            ax1.legend(loc='upper left')
+            ax1.grid(True, alpha=0.3)
+            
+            # X軸の日付ラベル（期間に応じて調整）
+            tick_indices = range(0, len(chart_data), max(1, len(chart_data)//6))
+            if timeframe == '1d':
+                tick_labels = [dates[i].strftime('%m/%d') for i in tick_indices]
+            else:
+                tick_labels = [dates[i].strftime('%m/%d %H:%M') for i in tick_indices]
+            ax1.set_xticks(tick_indices)
+            ax1.set_xticklabels(tick_labels, rotation=45)
+            
+            # 2. 出来高チャート
+            volumes = chart_data['Volume']
+            volume_colors = ['green' if closes.iloc[i] >= opens.iloc[i] else 'crimson' 
+                           for i in range(len(chart_data))]
+            
+            ax2.bar(range(len(chart_data)), volumes, color=volume_colors, alpha=0.7)
+            
+            # 出来高チャートにも判定日の矢印を追加
+            if judgment_index is not None:
+                max_volume = volumes.max()
+                ax2.annotate('', xy=(judgment_index, max_volume * 0.1), 
+                           xytext=(judgment_index, max_volume * 0.05),
+                           arrowprops=dict(arrowstyle='->', color='blue', lw=2),
+                           annotation_clip=False)
+            
+            ax2.set_xlim(-1, len(chart_data))
+            ax2.set_ylabel('出来高', fontsize=12)
+            ax2.set_xlabel('時間', fontsize=12)
+            ax2.grid(True, alpha=0.3)
+            
+            # X軸の日付ラベル
+            ax2.set_xticks(tick_indices)
+            ax2.set_xticklabels(tick_labels, rotation=45)
+            
+            # 出来高の単位調整
+            max_volume = volumes.max()
+            if max_volume > 1_000_000:
+                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1_000_000:.1f}M'))
+            elif max_volume > 1_000:
+                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1_000:.1f}K'))
+            
+            plt.tight_layout()
+            
+            # Base64エンコード
+            img = BytesIO()
+            plt.savefig(img, format='png', dpi=150, bbox_inches='tight')
+            img.seek(0)
+            chart_base64 = base64.b64encode(img.getvalue()).decode()
+            plt.close()
+            
+            return chart_base64
+            
+        except Exception as e:
+            print(f"  {symbol}: チャート生成エラー - {e}")
+            return None
+
+
 class ScreeningEngine:
     """スクリーニング実行エンジン"""
     
     def __init__(self):
         self.conditions = {
-            'halfsignal': HalfSignal()
+            'halfsignal': HalfSignal(),
+            'crypto_halfsignal': CryptoHalfSignal()
         }
     
     def get_available_conditions(self):
@@ -360,7 +684,7 @@ class ScreeningEngine:
             for name, condition in self.conditions.items()
         }
     
-    def run_screening(self, condition_name, symbol_list, judgment_date=None, max_concurrent=5):
+    def run_screening(self, condition_name, symbol_list, judgment_date=None, timeframe='1d', max_concurrent=5):
         """
         スクリーニングを実行
         
@@ -368,6 +692,7 @@ class ScreeningEngine:
             condition_name: スクリーニング条件名
             symbol_list: チェック対象シンボルリスト
             judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
+            timeframe: 時間足 ('1d', '4h', '1h', '15m') - 仮想通貨のみ
             max_concurrent: 同時処理数
         
         Returns:
@@ -393,7 +718,11 @@ class ScreeningEngine:
         for i, symbol in enumerate(symbol_list, 1):
             print(f"  {i}/{len(symbol_list)}: {symbol} をチェック中...")
             
-            result = condition.check_condition(symbol, judgment_date=judgment_date)
+            # 仮想通貨スクリーニングの場合はtimeframeパラメータを追加
+            if condition_name == 'crypto_halfsignal':
+                result = condition.check_condition(symbol, judgment_date=judgment_date, timeframe=timeframe)
+            else:
+                result = condition.check_condition(symbol, judgment_date=judgment_date)
             results.append(result)
             
             if 'error' in result:
@@ -407,6 +736,7 @@ class ScreeningEngine:
             'condition_name': condition_name,
             'condition_description': condition.description,
             'judgment_date': judgment_date,
+            'timeframe': timeframe if condition_name == 'crypto_halfsignal' else None,
             'total_checked': len(symbol_list),
             'passed_count': len(passed_symbols),
             'failed_count': len(failed_symbols),
@@ -505,6 +835,27 @@ MARKET_INDICES = {
             '6481.T', '6504.T', '6645.T', '6674.T', '6753.T', '6965.T', '7004.T', '7014.T', '7021.T', '7148.T',
             '7832.T', '8086.T', '8218.T', '8411.T', '8439.T', '8570.T', '8804.T', '9020.T', '9021.T',
         ]
+    },
+    'crypto_top10': {
+        'name': '暗号資産Top10',
+        'description': '時価総額上位10のUSDT建て暗号資産',
+        'symbols': [
+            'BTCUSDT',   # Bitcoin
+            'ETHUSDT',   # Ethereum  
+            'BNBUSDT',   # BNB
+            'XRPUSDT',   # XRP
+            'ADAUSDT',   # Cardano
+            'DOGEUSDT',  # Dogecoin
+            'SOLUSDT',   # Solana
+            'AVAXUSDT',  # Avalanche
+            'SUIUSDT',   # Sui
+            'HYPEUSDT',  # HyperLiquid
+        ]
+    },
+    'crypto_top20': {
+        'name': '暗号資産Top20',
+        'description': '時価総額上位20のUSDT建て暗号資産（ステーブルコイン除く）',
+        'symbols': TOP_CRYPTO_SYMBOLS
     }
 }
 
