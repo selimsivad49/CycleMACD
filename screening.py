@@ -86,42 +86,27 @@ class HalfSignal:
             condition2 = (latest['SMA5'] > prev['SMA5'])
             
             # 条件3: ローソク足実体の半分以上が5日SMAを上抜け
-            # 実体の上端（高い方の価格）
-            body_top = max(latest['Open'], latest['Close'])
-            # 実体の下端（低い方の価格）
-            body_bottom = min(latest['Open'], latest['Close'])
-            
             # 5日SMAより上にある実体部分の長さ
-            if body_top > latest['SMA5']:
-                cross_length = body_top - max(latest['SMA5'], body_bottom)
-            else:
-                cross_length = 0
-            
+            cross_length = latest['Close'] - latest['SMA5']
+
             # 実体全体の長さ
             body_length = latest['Close'] - latest['Open']
             
             # 半分以上の条件
-            condition3a = body_length > 0 and cross_length >= body_length / 2 and latest['SMA5'] > body_bottom
+            condition3a = cross_length > 0 and body_length > 0 and cross_length >= body_length / 2 and latest['SMA5'] > latest['Open']
             
-            # 代替条件: 実体下部を前日終値に置き換えた場合
-            alt_body_bottom = prev['Close']
-            alt_body_length = body_top - alt_body_bottom
-
-            if body_top > latest['SMA5']:
-                alt_cross_length = body_top - max(latest['SMA5'], alt_body_bottom)
-            else:
-                alt_cross_length = 0
-            
-            condition3b = alt_body_length > 0 and alt_cross_length >= alt_body_length / 2 and latest['SMA5'] > alt_body_bottom
+            # 代替条件: 実体下部を前期間終値に置き換えた場合
+            alt_body_length = latest['Close'] - prev['Close']
+            condition3b = cross_length > 0 and alt_body_length > 0 and cross_length >= alt_body_length / 2 and latest['SMA5'] > prev['Close']
             
             condition3 = condition3a or condition3b
 
-            # 条件4: 直近4日間で5日SMAにタッチしていること（安値が5日SMA以下）
+            # 条件4: 直近4日間で20日SMAにタッチしていること（安値が20日SMA以下）
             condition4 = False
             # 最低4日分のデータがあることを確認してから条件をチェック
             if len(data) >= 4:
                 for i in range(-4, 0):  # 直近4日間をチェック
-                    if not pd.isna(data.iloc[i]['SMA5']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA5']:
+                    if not pd.isna(data.iloc[i]['SMA20']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA20']:
                         condition4 = True
                         break
 
@@ -137,7 +122,7 @@ class HalfSignal:
                 'condition1_sma_order': condition1,
                 'condition2_sma5_rising': condition2,
                 'condition3_half_cross': condition3,
-                'condition4_touch_5SMA': condition4,
+                'condition4_touch_20SMA': condition4,
                 'body_length': float(body_length),
                 'cross_length': float(cross_length),
                 'cross_ratio': float(cross_length / body_length) if body_length > 0 else 0,
@@ -307,10 +292,10 @@ class HalfSignal:
             ax2.bar(range(len(chart_data)), volumes, color=volume_colors, alpha=0.7)
             
             # 出来高チャートにも判定日の矢印を追加
-            if judgment_index is not None:
+            if chart_judgment_index is not None:
                 max_volume = volumes.max()
-                ax2.annotate('', xy=(judgment_index, max_volume * 0.1), 
-                           xytext=(judgment_index, max_volume * 0.05),
+                ax2.annotate('', xy=(chart_judgment_index, max_volume * 0.1), 
+                           xytext=(chart_judgment_index, max_volume * 0.05),
                            arrowprops=dict(arrowstyle='->', color='blue', lw=2),
                            annotation_clip=False)
             
@@ -403,48 +388,36 @@ class CryptoHalfSignal:
             
             # 条件1: 5日SMA > 20日SMA > 60日SMA
             condition1 = (latest['SMA5'] > latest['SMA20'] > latest['SMA60'])
+            condition1 = (latest['SMA5'] > latest['SMA20'])
             
             # 条件2: 最新5日SMAが前期間より上昇
             condition2 = (latest['SMA5'] > prev['SMA5'])
             
             # 条件3: ローソク足実体の半分以上が5日SMAを上抜け
-            # 実体の上端（高い方の価格）
-            body_top = max(latest['Open'], latest['Close'])
-            # 実体の下端（低い方の価格）
-            body_bottom = min(latest['Open'], latest['Close'])
-            
+
             # 5日SMAより上にある実体部分の長さ
-            if body_top > latest['SMA5']:
-                cross_length = body_top - max(latest['SMA5'], body_bottom)
-            else:
-                cross_length = 0
-            
+            cross_length = latest['Close'] - latest['SMA5']
+
             # 実体全体の長さ
             body_length = latest['Close'] - latest['Open']
             
             # 半分以上の条件
-            condition3a = body_length > 0 and cross_length >= body_length / 2 and latest['SMA5'] > body_bottom
+            condition3a = cross_length > 0 and body_length > 0 and cross_length >= body_length / 2 and latest['SMA5'] > latest['Open']
             
             # 代替条件: 実体下部を前期間終値に置き換えた場合
-            alt_body_bottom = prev['Close']
-            alt_body_length = body_top - alt_body_bottom
+            alt_body_length = latest['Close'] - prev['Close']
+            condition3b = cross_length > 0 and alt_body_length > 0 and cross_length >= alt_body_length / 2 and latest['SMA5'] > prev['Close']
 
-            if body_top > latest['SMA5']:
-                alt_cross_length = body_top - max(latest['SMA5'], alt_body_bottom)
-            else:
-                alt_cross_length = 0
-            
-            condition3b = alt_body_length > 0 and alt_cross_length >= alt_body_length / 2 and latest['SMA5'] > alt_body_bottom
-            
             condition3 = condition3a or condition3b
-            
-            # 条件4: 直近4期間で5日SMAにタッチしていること（安値が5日SMA以下）
+
+            # 条件4: 直近4期間で20日SMAにタッチしていること（安値が20日SMA以下）
             condition4 = False
             # 最低4期間分のデータがあることを確認してから条件をチェック
             if len(data) >= 4:
                 for i in range(-4, 0):  # 直近4期間をチェック
-                    if not pd.isna(data.iloc[i]['SMA5']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA5']:
+                    if not pd.isna(data.iloc[i]['SMA20']) and data.iloc[i]['Low'] <= data.iloc[i]['SMA20']:
                         condition4 = True
+                        # print(i, data.iloc[i])
                         break
 
             # 全条件の結果
@@ -459,7 +432,7 @@ class CryptoHalfSignal:
                 'condition1_sma_order': condition1,
                 'condition2_sma5_rising': condition2,
                 'condition3_half_cross': condition3,
-                'condition4_touch_5SMA': condition4,
+                'condition4_touch_20SMA': condition4,
                 'body_length': float(body_length),
                 'cross_length': float(cross_length),
                 'cross_ratio': float(cross_length / body_length) if body_length > 0 else 0,
@@ -480,7 +453,7 @@ class CryptoHalfSignal:
                 'error': f'スクリーニングエラー: {str(e)}'
             }
     
-    def generate_chart(self, symbol, judgment_date=None, timeframe='1d', period_days=60):
+    def generate_chart(self, symbol, judgment_date=None, timeframe='1d', period_candles=60):
         """
         仮想通貨HalfSignal用のチャートを生成
         
@@ -488,7 +461,7 @@ class CryptoHalfSignal:
             symbol: 銘柄シンボル (例: 'BTCUSDT')
             judgment_date: 判定日 (YYYY-MM-DD形式、Noneの場合は当日)
             timeframe: 時間足 ('1d', '4h', '1h', '15m')
-            period_days: 表示期間（日数、デフォルト60日）
+            period_candles: 表示期間（ローソク足本数、デフォルト60本）
         
         Returns:
             str: Base64エンコードされたチャート画像、またはNone（エラー時）
@@ -509,12 +482,25 @@ class CryptoHalfSignal:
                 today
             )
             
-            # データ取得開始日（チャート期間 + SMA計算用の余裕を加える）
-            chart_period = period_days + 60  # 60期間のSMA計算のため60期間の余裕
-            start_date = (end_dt - timedelta(days=chart_period)).strftime('%Y-%m-%d')
+            # 時間足に応じた期間計算
+            timeframe_hours = {
+                '1d': 24,
+                '4h': 4,
+                '1h': 1,
+                '15m': 0.25
+            }
+            
+            hours_per_candle = timeframe_hours.get(timeframe, 24)
+            
+            # データ取得開始日（period_candles本分 + SMA計算用100本の余裕）
+            total_candles_needed = period_candles + 100
+            total_hours_needed = total_candles_needed * hours_per_candle
+            total_days_needed = int(total_hours_needed / 24) + 1
+            start_date = (end_dt - timedelta(days=total_days_needed)).strftime('%Y-%m-%d')
 
             # 判定日以降のデータも取得するため、chart_end_dateまでデータを取得
             data = get_crypto_data(symbol, timeframe, start_date, chart_end_date)
+            print(data.tail())
             
             if data is None or len(data) < 70:  # 最低70期間分は必要（60SMA計算のため）
                 return None
@@ -525,38 +511,53 @@ class CryptoHalfSignal:
             data['SMA60'] = data['Close'].rolling(window=60).mean()
             data['SMA100'] = data['Close'].rolling(window=100).mean()
             
-            # チャートデータの取得：判定日の前からperiod_days期間分を基本とし、判定日+7日まで拡張
-            chart_start_dt = end_dt - timedelta(days=period_days - 1)
+            # 判定日に最も近いデータのインデックスを見つける
+            judgment_dt = pd.Timestamp(end_dt)
+            judgment_index = None
+            
+            # 判定日以前で最も近いデータを見つける
+            for i, date in enumerate(data.index):
+                if date.date() <= judgment_dt.date():
+                    judgment_index = i
+                else:
+                    break
+            
+            if judgment_index is None or judgment_index < 60:  # SMA計算に十分なデータがない
+                judgment_index = min(len(data) - 1, 100)  # 利用可能なデータから適切なポイントを選択
+
+            print(judgment_index, judgment_dt,data.index[judgment_index])
+            # print(data.iloc[judgment_index,:])
+            print(data.head(judgment_index+1).tail())
+
+            # チャートデータの範囲を決定：判定日から前period_candles本、後7本程度
+            chart_start_index = max(0, judgment_index - period_candles + 1)
+            chart_end_index = min(len(data) - 1, judgment_index + 7)
             
             # データをフィルタリング
-            chart_data = data[
-                (data.index >= chart_start_dt.strftime('%Y-%m-%d')) & 
-                (data.index <= chart_end_date)
-            ].copy()
+            chart_data = data.iloc[chart_start_index:chart_end_index + 1].copy()
             
-            # データが不足している場合は、利用可能な全データを使用
-            if len(chart_data) < 60:
-                extended_start_dt = end_dt - timedelta(days=100)
-                chart_data = data[
-                    (data.index >= extended_start_dt.strftime('%Y-%m-%d')) & 
-                    (data.index <= chart_end_date)
-                ].copy()
-            
-            if len(chart_data) < 30:  # 最低30期間分は必要
+            if len(chart_data) < 30:  # 最低30本は必要
                 return None
             
-            # 判定日のインデックスを特定
-            judgment_index = None
+            # チャートデータ内での判定日のインデックスを特定
+            chart_judgment_index = None
             if judgment_date:
                 try:
                     judgment_dt = pd.Timestamp(judgment_date)
                     for i, date in enumerate(chart_data.index):
-                        if date.date() >= judgment_dt.date():
-                            judgment_index = i
+                        # 時間足の場合翌日になる前の位置を判定位置に
+                        if date.date() > judgment_dt.date():
+                            chart_judgment_index = i - 1
+                            print(f"judgment_dt.date(): {date.date()} - {judgment_dt.date()}")
                             break
+                    if chart_judgment_index is None:
+                        chart_judgment_index = len(chart_data) - 1
+                        print(f"judgment_dt_index is none: {len(chart_data)} - {judgment_dt.date()}")
                 except (ValueError, AttributeError):
-                    pass
-            
+                    chart_judgment_index = len(chart_data) - 7 if len(chart_data) > 7 else len(chart_data) - 1
+            print(chart_judgment_index, judgment_dt, chart_data.index[chart_judgment_index])
+            print(chart_data.head(chart_judgment_index+1+7).tail(8))
+
             # チャート生成
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), 
                                           gridspec_kw={'height_ratios': [3, 1]})
@@ -598,10 +599,10 @@ class CryptoHalfSignal:
                     color='yellow', linewidth=1, label='100期間SMA', alpha=0.8)
             
             # 判定日に青色の上向き矢印を追加
-            if judgment_index is not None:
-                judgment_price = chart_data.iloc[judgment_index]['Low']
-                ax1.annotate('', xy=(judgment_index, judgment_price * 0.99), 
-                           xytext=(judgment_index, judgment_price * 0.98),
+            if chart_judgment_index is not None:
+                judgment_price = chart_data.iloc[chart_judgment_index]['Low']
+                ax1.annotate('', xy=(chart_judgment_index, judgment_price * 0.99), 
+                           xytext=(chart_judgment_index, judgment_price * 0.98),
                            arrowprops=dict(arrowstyle='->', color='blue', lw=4),
                            annotation_clip=False)
             
@@ -629,10 +630,10 @@ class CryptoHalfSignal:
             ax2.bar(range(len(chart_data)), volumes, color=volume_colors, alpha=0.7)
             
             # 出来高チャートにも判定日の矢印を追加
-            if judgment_index is not None:
+            if chart_judgment_index is not None:
                 max_volume = volumes.max()
-                ax2.annotate('', xy=(judgment_index, max_volume * 0.1), 
-                           xytext=(judgment_index, max_volume * 0.05),
+                ax2.annotate('', xy=(chart_judgment_index, max_volume * 0.1), 
+                           xytext=(chart_judgment_index, max_volume * 0.05),
                            arrowprops=dict(arrowstyle='->', color='blue', lw=2),
                            annotation_clip=False)
             
@@ -836,6 +837,14 @@ MARKET_INDICES = {
             '7832.T', '8086.T', '8218.T', '8411.T', '8439.T', '8570.T', '8804.T', '9020.T', '9021.T',
         ]
     },
+    'crypto_top2': {
+        'name': '暗号資産Top2',
+        'description': '時価総額上位2のUSDT建て暗号資産',
+        'symbols': [
+            'BTCUSDT',   # Bitcoin
+            'ETHUSDT',   # Ethereum  
+        ]
+    },
     'crypto_top10': {
         'name': '暗号資産Top10',
         'description': '時価総額上位10のUSDT建て暗号資産',
@@ -849,13 +858,30 @@ MARKET_INDICES = {
             'SOLUSDT',   # Solana
             'AVAXUSDT',  # Avalanche
             'SUIUSDT',   # Sui
-            'HYPEUSDT',  # HyperLiquid
+            # 'HYPEUSDT',  # HyperLiquid
         ]
     },
     'crypto_top20': {
         'name': '暗号資産Top20',
         'description': '時価総額上位20のUSDT建て暗号資産（ステーブルコイン除く）',
         'symbols': TOP_CRYPTO_SYMBOLS
+    },
+    # 時価総額上位200位 暗号資産USDT建て取引シンボル一覧
+
+    'crypto_top200': {
+        'name': '暗号資産Top200',
+        'description': '時価総額上位200のUSDT建て暗号資産（ステーブルコイン除く）',
+        'symbols': [
+            'BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'BNBUSDT', 'SOLUSDT', 'DOGEUSDT', 'ADAUSDT',
+            'AVAXUSDT', 'LINKUSDT', 'BCHUSDT', 'LTCUSDT', 'SHIBUSDT', 'DOTUSDT', 'UNIUSDT', 'XLMUSDT', 
+            'SUIUSDT', 'ATOMUSDT', 'FILUSDT', 'ALGOUSDT',
+
+            # 'IMXUSDT', 'APTUSDT', 'NEARUSDT', 'HBARUSDT', 'ETCUSDT', 'ICPUSDT', 'PEPEUSDT', 
+            # 'AAVEUSDT', 'RUNEUSDT', 'TAOUSDT', 'BONKUSDT', 'MKRUSDT', 'FTMUSDT', 
+            # 'ARBUSDT','KASUSDT', 'INJUSDT', 'RENDERUSDT', 'FLOWUSDT','TRXUSDT', 
+            # 'IOTAUSDT', 'AXSUSDT', 'SEIUSDT', 'FLRUSDT', '1INCHUSDT', 'CRVUSDT',
+            # 'CAKEUSDT', 'CHZUSDT', 'WLDUSDT', 'APEUSDT', 'YFIUSDT', 
+            ]
     }
 }
 

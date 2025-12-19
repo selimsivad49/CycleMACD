@@ -27,7 +27,7 @@ TOP_CRYPTO_SYMBOLS = [
     'DOGEUSDT',  # Dogecoin
     'SOLUSDT',   # Solana
     'SUIUSDT',   # Sui
-    'HYPEUSDT',  # HyperLiquid
+    # 'HYPEUSDT',  # HyperLiquid
     'DOTUSDT',   # Polkadot
     'AVAXUSDT',  # Avalanche
     'SHIBUSDT',  # Shiba Inu
@@ -217,11 +217,12 @@ class CryptoDataManager:
         return pd.DataFrame()
     
     def needs_update(self, symbol, timeframe, required_start, required_end):
-        """データの更新が必要かチェック"""
+        """データの更新が必要かチェック（データの抜けを適切に処理）"""
         first_date, last_date = self.get_data_range(symbol, timeframe)
         
+        # データが全くない場合
         if first_date is None or last_date is None:
-            return True, required_start, required_end
+            return True, required_start, required_end, True  # 初回フラグを追加
         
         # 必要な範囲がデータベースの範囲内かチェック
         required_start_dt = pd.to_datetime(required_start)
@@ -229,29 +230,31 @@ class CryptoDataManager:
         first_date_dt = pd.to_datetime(first_date)
         last_date_dt = pd.to_datetime(last_date)
 
-        # 更新が必要な範囲を計算
+        # 必要な範囲が完全にデータベースの範囲内にある場合は取得不要
+        if first_date_dt <= required_start_dt and required_end_dt <= last_date_dt:
+            return False, None, None, False
+
+        # データの抜けを適切に処理するため、取得範囲を設定
         fetch_start = required_start
         fetch_end = required_end
         
-        # 取得不要
-        if first_date_dt <= required_start_dt and required_end_dt <= last_date_dt:
-            return False, None, None
-
-        # 取得範囲設定
+        # より古いデータが必要な場合（データの抜けを避けるため既存の開始日まで取得）
         if required_start_dt < first_date_dt:
             fetch_start = required_start
-        else:
-            fetch_start = last_date
+            fetch_end = max(required_end, first_date)  # 既存データとの間を埋める
             
-        if last_date_dt < required_end_dt:
+        # より新しいデータが必要な場合
+        elif last_date_dt < required_end_dt:
+            fetch_start = max(required_start, last_date)  # 既存データの最後から
             fetch_end = required_end
-        else:
-            fetch_end = required_start
+            
+        # 既存データの範囲内だが、データの抜けがある可能性がある場合の追加処理は
+        # 実際のデータ取得時に行う
 
-        return True, fetch_start, fetch_end
+        return True, fetch_start, fetch_end, False
     
-    def fetch_from_binance(self, symbol, timeframe, start_date, end_date):
-        """Binance APIからデータを取得"""
+    def fetch_from_binance(self, symbol, timeframe, start_date, end_date, is_initial=False):
+        """Binance APIからデータを取得（最低1000本保証）"""
         try:
             print(f"  {symbol}({timeframe}): Binanceから取得中 ({start_date} - {end_date})")
             
@@ -260,27 +263,86 @@ class CryptoDataManager:
             if not binance_interval:
                 raise ValueError(f"サポートされていない時間足: {timeframe}")
             
+            # 初回取得の場合は最低1000本のデータを確保する
+            if is_initial:
+                # 現在日時から1000本分遡って開始日を計算
+                from datetime import datetime, timedelta
+                
+                # 時間足に応じた期間を計算
+                timeframe_hours = {
+                    '1d': 24,
+                    '4h': 4,
+                    '1h': 1,
+                    '15m': 0.25
+                }
+                
+                hours_per_candle = timeframe_hours.get(timeframe, 24)
+                total_hours = 1000 * hours_per_candle
+                total_days = int(total_hours / 24) + 1  # 余裕を持たせる
+                
+                # より古い開始日を設定
+                extended_start = (datetime.now() - timedelta(days=total_days)).strftime('%Y-%m-%d')
+                if pd.to_datetime(extended_start) < pd.to_datetime(start_date):
+                    start_date = extended_start
+                    print(f"  {symbol}({timeframe}): 最低1000本確保のため開始日を {start_date} に変更")
+            
             # 文字列の日付をms形式に変換
             if isinstance(start_date, str):
                 start_date = start_date + " 00:00:00"
             if isinstance(end_date, str):
                 end_date = end_date + " 23:59:59"
             
-            # Binance APIから履歴データ取得
-            klines = self.client.get_historical_klines(
-                symbol=symbol,
-                interval=binance_interval,
-                start_str=start_date,
-                end_str=end_date,
-                limit=1000
-            )
+            all_data = []
+            current_start = start_date
             
-            if not klines:
+            # データを分割して取得（1000本制限対応）
+            while True:
+                # Binance APIから履歴データ取得
+                klines = self.client.get_historical_klines(
+                    symbol=symbol,
+                    interval=binance_interval,
+                    start_str=current_start,
+                    end_str=end_date,
+                    limit=1000
+                )
+                
+                if not klines:
+                    break
+                
+                all_data.extend(klines)
+                
+                # 1000本未満の場合は終了
+                if len(klines) < 1000:
+                    break
+                
+                # 次の開始点を設定（最後のタイムスタンプの次）
+                last_timestamp = klines[-1][0]
+                last_dt = pd.to_datetime(last_timestamp, unit='ms')
+                
+                # 時間足に応じて次の開始時間を設定
+                if timeframe == '1d':
+                    next_start = last_dt + timedelta(days=1)
+                elif timeframe == '4h':
+                    next_start = last_dt + timedelta(hours=4)
+                elif timeframe == '1h':
+                    next_start = last_dt + timedelta(hours=1)
+                elif timeframe == '15m':
+                    next_start = last_dt + timedelta(minutes=15)
+                else:
+                    break
+                
+                current_start = next_start.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # 終了日を超えた場合は終了
+                if next_start >= pd.to_datetime(end_date):
+                    break
+            
+            if not all_data:
                 print(f"  {symbol}({timeframe}): データが見つかりませんでした")
                 return pd.DataFrame()
             
             # DataFrame変換
-            df = pd.DataFrame(klines, columns=[
+            df = pd.DataFrame(all_data, columns=[
                 'timestamp', 'open', 'high', 'low', 'close', 'volume',
                 'close_time', 'quote_volume', 'trades_count', 
                 'taker_buy_base_volume', 'taker_buy_quote_volume', 'ignore'
@@ -289,7 +351,11 @@ class CryptoDataManager:
             # 必要な列のみ選択・変換
             df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume', 'trades_count']]
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+            # 重複削除
+            df = df.drop_duplicates(subset=['timestamp'])
             df.set_index('timestamp', inplace=True)
+            df.sort_index(inplace=True)
             
             # 数値型に変換
             for col in ['open', 'high', 'low', 'close', 'volume', 'quote_volume']:
@@ -354,11 +420,11 @@ def get_crypto_data(symbol, timeframe, start_date, end_date, crypto_manager=None
     
     try:
         # データベースの更新が必要かチェック
-        needs_update, fetch_start, fetch_end = crypto_manager.needs_update(symbol, timeframe, start_date, end_date)
+        needs_update, fetch_start, fetch_end, is_initial = crypto_manager.needs_update(symbol, timeframe, start_date, end_date)
         
         # 新しいデータが必要な場合、Binance APIから取得
         if needs_update and fetch_start and fetch_end:
-            new_data = crypto_manager.fetch_from_binance(symbol, timeframe, fetch_start, fetch_end)
+            new_data = crypto_manager.fetch_from_binance(symbol, timeframe, fetch_start, fetch_end, is_initial)
             
             if not new_data.empty:
                 # データベースに保存
